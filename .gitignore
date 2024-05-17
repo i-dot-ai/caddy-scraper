@@ -1,0 +1,8 @@
+.env
+debug.log
+scraper_config.json
+.venv
+__pycache__
+cachedir
+.pre-commit-trivy-cache
+.ruff_cache

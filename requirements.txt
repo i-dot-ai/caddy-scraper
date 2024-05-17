@@ -1,0 +1,11 @@
+pandas
+jupyter
+langchain
+sentence-transformers
+opensearch-py
+boto3
+html2text
+python-dotenv
+lxml
+requests-aws4auth
+pre-commit

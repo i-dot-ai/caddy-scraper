@@ -1,0 +1,7 @@
+[project]
+name = "caddy-scraper"
+version = "0.1.0"
+requires-python = ">=3.11"
+description = "The scraper for Caddy"
+readme = "README.md"
+license = {text = "MIT License"}
