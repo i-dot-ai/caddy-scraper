@@ -18,8 +18,8 @@ opensearch_https = os.environ.get("OPENSEARCH_HTTPS")
 # embedding_model_name = os.environ.get("HF_EMBEDDING_MODEL")
 bedrock_model_id = os.environ.get("BEDROCK_MODEL_ID")
 
-region = "eu-west-2"
-service = "es"
+region = "eu-west-3"
+service = "aoss"
 session = boto3.Session()
 credentials = session.get_credentials()
 auth_creds = AWS4Auth(
@@ -28,7 +28,7 @@ auth_creds = AWS4Auth(
     refreshable_credentials=credentials,
 )
 
-embedding_model = BedrockEmbeddings(model_id = bedrock_model_id)
+embedding_model = BedrockEmbeddings(model_id = bedrock_model_id, region_name=region)
 
 def generate_rolling_vectorstore_name():
     """Generates a name name for the index based on todays day
@@ -56,6 +56,6 @@ vectorstore = OpenSearchVectorSearch(
     index_name=index_name,
     opensearch_url=opensearch_https,
     http_auth=auth_creds,
-    embedding=embedding_model,
+    embedding_function=embedding_model,
     connection_class=RequestsHttpConnection,
 )

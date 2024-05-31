@@ -7,8 +7,8 @@ import os
 logging.basicConfig(level=logging.DEBUG)
 
 # Initialize AWS Bedrock client
-region = 'eu-west-2'
-model_id = "amazon.titan-embed-text-v2:0"
+region = 'eu-west-3'
+model_id = "cohere.embed-english-v3"
 session = boto3.Session()
 client = session.client('bedrock', region_name=region)
 

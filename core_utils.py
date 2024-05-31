@@ -14,8 +14,7 @@ from dotenv import load_dotenv
 from joblib import Memory
 from langchain_community.document_loaders import AsyncHtmlLoader, DataFrameLoader
 from langchain_community.document_transformers import BeautifulSoupTransformer
-# from generate_vectorstore import vectorstore
-from generate_vectorstore_bedrock import vectorstore
+from generate_vectorstore import vectorstore
 from opensearchpy import helpers
 import time
 import functools
