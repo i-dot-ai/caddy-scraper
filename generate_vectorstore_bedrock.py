@@ -28,7 +28,11 @@ auth_creds = AWS4Auth(
     refreshable_credentials=credentials,
 )
 
-embedding_model = BedrockEmbeddings(model_id = bedrock_model_id)
+
+bedrock_client = boto3.client(service_name='bedrock-runtime', 
+                              region_name=region)
+embedding_model = BedrockEmbeddings(model_id="amazon.titan-embed-text-v1",
+                                       client=bedrock_client)
 
 def generate_rolling_vectorstore_name():
     """Generates a name name for the index based on todays day
@@ -56,6 +60,6 @@ vectorstore = OpenSearchVectorSearch(
     index_name=index_name,
     opensearch_url=opensearch_https,
     http_auth=auth_creds,
-    embedding=embedding_model,
+    embedding_function=embedding_model,
     connection_class=RequestsHttpConnection,
 )

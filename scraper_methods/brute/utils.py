@@ -35,7 +35,7 @@ def brute_find_all_links(base_url, scrape_depth, authentication_cookie=None):
 
     root_page = docs[0]
 
-    page_html = BeautifulSoup(root_page.page_content)
+    page_html = BeautifulSoup(root_page.page_content, features="lxml")
 
     extracted_links = bs_transformer.extract_tags(str(page_html), ["a"])
 
