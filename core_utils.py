@@ -139,10 +139,9 @@ def get_sitemap(url):
     """
 
     response = requests.get(url)  # nosec
-    xml = BeautifulSoup(
-        response, "lxml-xml", from_encoding=response.info().get_param("charset")
-    )
-
+    response.raise_for_status()  # Ensure we get a valid response or raise an HTTPError
+    response.encoding = response.apparent_encoding  # Set the apparent encoding if not provided
+    xml = BeautifulSoup(response.content, "lxml-xml")
     return xml
 
 
@@ -269,6 +268,7 @@ def sitemap_to_dataframe(xml, name=None, verbose=False):
     return df
 
 
+
 def get_all_urls(url, domains_to_exclude=None):
     """Return a dataframe containing all of the URLs from a site's XML sitemaps.
 
@@ -303,7 +303,7 @@ def get_all_urls(url, domains_to_exclude=None):
                 # remove any rows which contain any of the excluded domains
                 if domains_to_exclude:
                     df_sitemap = df_sitemap[
-                        ~df_sitemap["domain"].str.contains("|".join(domains_to_exclude))
+                        ~df_sitemap["loc"].str.contains("|".join(domains_to_exclude))
                     ]
 
                 df = pd.concat([df, df_sitemap], ignore_index=True)

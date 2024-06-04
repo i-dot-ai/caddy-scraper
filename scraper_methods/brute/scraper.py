@@ -43,5 +43,4 @@ def brute_scrape_website(base_domain: str, domain_description: str, **kwargs):
             authentication_cookie,
         )
         add_document_list_to_vectorstore(docs_to_upload, vectorstore)
-
     delete_duplicate_urls_from_store(vectorstore)
