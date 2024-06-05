@@ -10,7 +10,8 @@ import logging
 from core_utils import (
     return_excluded_domains,
     generate_vectorstore,
-    delete_duplicate_urls_from_store,
+    delete_duplicate_chunks_from_store,
+    add_document_list_to_vectorstore,
 )
 
 # Configure logging
@@ -111,7 +112,7 @@ def add_document_list_to_db(document_list, vectorstore, bulk_size=20000):
 
 
 def scrape_govuk_child_sitemap_df(
-    site_df, vectorstore, batch_size=1000, retry_attempts=3
+    site_df, vectorstore, batch_size=1000, retry_attempts=3, token_chunk_size=512
 ):
     """takes a dataframe generated from a govuk child sitemap, and then scrapes each url in turn
 
@@ -154,7 +155,7 @@ def scrape_govuk_child_sitemap_df(
 
         for attempt in range(1, retry_attempts + 1):
             try:
-                add_document_list_to_db(docs_with_content, vectorstore)
+                add_document_list_to_vectorstore(docs_with_content, vectorstore)
                 break  # Exit loop if successful
             except Exception as e:
                 logging.debug(f"Attempt {attempt} failed: {e}")
@@ -212,4 +213,4 @@ def iterative_govuk_scrape(domains_to_exclude=None, retry_attempts=3, **kwargs):
             # print error
             logging.debug(e)
 
-        delete_duplicate_urls_from_store(vectorstore)
+        delete_duplicate_chunks_from_store(vectorstore)

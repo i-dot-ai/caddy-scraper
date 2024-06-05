@@ -7,15 +7,13 @@ from opensearchpy import RequestsHttpConnection
 
 
 from langchain_community.embeddings import BedrockEmbeddings
-from langchain_community.embeddings import HuggingFaceEmbeddings
-
 from langchain_community.vectorstores import OpenSearchVectorSearch
+
 
 from dotenv import load_dotenv
 
 load_dotenv()
 opensearch_https = os.environ.get("OPENSEARCH_HTTPS")
-# embedding_model_name = os.environ.get("HF_EMBEDDING_MODEL")
 bedrock_model_id = os.environ.get("BEDROCK_MODEL_ID")
 
 region = "eu-west-3"
@@ -28,7 +26,12 @@ auth_creds = AWS4Auth(
     refreshable_credentials=credentials,
 )
 
-embedding_model = BedrockEmbeddings(model_id = bedrock_model_id, region_name=region)
+embedding_model = BedrockEmbeddings(
+    model_id=bedrock_model_id,
+    region_name=region,
+    model_kwargs={"input_type": "search_document", "truncate": "END"},
+)
+
 
 def generate_rolling_vectorstore_name():
     """Generates a name name for the index based on todays day

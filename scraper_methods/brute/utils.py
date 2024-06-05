@@ -6,6 +6,7 @@ from core_utils import (
     extract_urls,
     check_if_link_in_base_domain,
     return_excluded_domains,
+    remove_anchor_urls,
 )
 
 
@@ -77,6 +78,10 @@ def brute_find_all_links(base_url, scrape_depth, authentication_cookie=None):
                 )
             ]
 
+            # remove anchor links
+            links = remove_anchor_urls(links)
+
+            # remove duplicates
             links = list(set(links))
 
             if authentication_cookie:
@@ -84,4 +89,7 @@ def brute_find_all_links(base_url, scrape_depth, authentication_cookie=None):
             else:
                 loader = AsyncHtmlLoader(links)
 
-    return links
+    # take off any anchor links
+    filtered_urls = remove_anchor_urls(links)
+
+    return filtered_urls

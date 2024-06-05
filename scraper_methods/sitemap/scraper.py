@@ -2,7 +2,7 @@ from core_utils import (
     generate_vectorstore,
     crawl_url_batch,
     add_document_list_to_vectorstore,
-    delete_duplicate_urls_from_store,
+    delete_duplicate_chunks_from_store,
 )
 from scraper_methods.sitemap.utils import get_urls_from_sitemap_as_batch
 
@@ -31,4 +31,4 @@ def crawl_with_sitemap(base_domain: str, domain_description: str, **kwargs):
         )
         add_document_list_to_vectorstore(docs_to_upload, vectorstore)
 
-    delete_duplicate_urls_from_store(vectorstore)
+    delete_duplicate_chunks_from_store(vectorstore)
