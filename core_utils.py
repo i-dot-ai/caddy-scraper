@@ -16,7 +16,7 @@ from langchain_community.document_loaders import AsyncHtmlLoader, DataFrameLoade
 from langchain_community.document_transformers import BeautifulSoupTransformer
 
 from generate_vectorstore import vectorstore
-from chunking import split_documents_by_chunker, text_splitter
+from chunking import split_long_documents_in_list
 from opensearchpy import helpers
 import time
 import functools
@@ -25,6 +25,8 @@ import traceback
 
 LOCATION = "./cachedir"
 MEMORY = Memory(LOCATION, verbose=0)
+
+# TODO REMOVE CACHING
 
 load_dotenv()  # take environment variables from .env.
 
@@ -108,6 +110,7 @@ def remove_anchor_urls(urls):
     return cleaned_urls
 
 
+@MEMORY.cache
 def crawl_url_batch(
     url_list: List,
     domain_description: str,
@@ -133,27 +136,16 @@ def crawl_url_batch(
         # get main section of page
         soup = BeautifulSoup(page.page_content, "html.parser")
 
-        main_section_html = ""
-
-        # Extract html content by div ids
-        if div_ids:
-            for div_id in div_ids:
-                selected_div_id_html = soup.find("div", id=div_id)
-                if selected_div_id_html:
-                    main_section_html += str(selected_div_id_html)
-
-        # Extract html content by div classes
-        if div_classes:
-            for div_class in div_classes:
-                selected_div_classes_html = soup.find("div", class_=div_class)
-                if selected_div_classes_html:
-                    main_section_html += str(selected_div_classes_html)
+        if soup.find("div", id=div_ids):
+            main_section_html = soup.find("div", id=div_ids)
+        elif soup.find("div", class_=div_classes):
+            main_section_html = soup.find("div", class_=div_classes)
+        else:
+            main_section_html = soup
 
         # Parse the combined HTML content again to extract paragraphs
         if len(main_section_html) > 0:
-            main_section_soup = BeautifulSoup(main_section_html, "html.parser")
-            paragraphs_in_main = main_section_soup.find_all("p")
-            current_page_markdown = html2text.html2text(str(paragraphs_in_main))
+            current_page_markdown = html2text.html2text(str(main_section_html))
             page_dict = {"source_url": current_url, "markdown": current_page_markdown}
             scraped_pages.append(page_dict)
 
@@ -169,9 +161,9 @@ def crawl_url_batch(
 
     # TODO REMOVE this once debugging done
     unique_pages.to_csv("unique_pages.csv")
+    unique_pages.to_pickle("unique_pages.pkl")
 
-    # apply remove_duplicate_markdown_chunks to each row
-    unique_pages["markdown"] = unique_pages["markdown"].apply(remove_duplicate_chunks)
+    # unique_pages['token_count'] = unique_pages['markdown'].apply(lambda x: num_tokens_from_string(x, default_encoder))
 
     dataframe_loader = DataFrameLoader(unique_pages, page_content_column="markdown")
 
@@ -263,7 +255,7 @@ def generate_vectorstore():
 
 @retry()
 def add_document_list_to_vectorstore(
-    document_list, vectorstore, batch_size=500, retry_count=3, maxiumum_token_length=512
+    document_list, vectorstore, batch_size=50, retry_count=3, maxiumum_token_length=512
 ):
     """Takes a list of documents, and adds them to the vectorstore in batches
 
@@ -280,9 +272,7 @@ def add_document_list_to_vectorstore(
     print("beginning to shorten long documents")
     print("initial document count:", len(document_list))
 
-    shortened_documents = split_documents_by_chunker(
-        document_list, maxiumum_token_length, text_splitter
-    )
+    shortened_documents = split_long_documents_in_list(document_list, 510, 2047)
 
     print("shortened document count:", len(shortened_documents))
     document_list = shortened_documents

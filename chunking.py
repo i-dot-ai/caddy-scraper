@@ -1,21 +1,51 @@
 import tiktoken
 from typing import List
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_text_splitters import CharacterTextSplitter
+import re
 
 default_encoder = "cl100k_base"
 
 encoding = tiktoken.get_encoding(default_encoder)
 
-
-text_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=512,
-    chunk_overlap=20,
-    length_function=len,
-    is_separator_regex=False,
+text_splitter = CharacterTextSplitter.from_tiktoken_encoder(
+    encoding_name=default_encoder, chunk_size=512, chunk_overlap=50
 )
 
 
-markdown_splitter_list = []
+def crop_by_tokens(text, max_tokens=1500):
+    # Initialize the tokenizer
+    tokenizer = encoding
+
+    # Tokenize the input text
+    tokens = tokenizer.encode(text)
+
+    # Crop the tokens to the specified maximum number
+    cropped_tokens = tokens[:max_tokens]
+
+    # Decode the tokens back to string
+    cropped_text = tokenizer.decode(cropped_tokens)
+
+    return cropped_text
+
+
+def crop_by_chars(text, max_chars=2048):
+    return text[:max_chars]
+
+
+def split_document_embedding(document_list):
+    """Splits a document based on the given splitter, but retains the original text
+
+    Returns a list of new documents
+    """
+    shortened_docs = []
+
+    for document in document_list:
+        original_document_text = document.page_content
+        extended_document_text = crop_by_tokens(original_document_text)
+        document.text = extended_document_text
+        shortened_docs.append(document)
+
+    return shortened_docs
 
 
 def num_tokens_from_string(string: str, encoding_name: str) -> int:
@@ -25,66 +55,44 @@ def num_tokens_from_string(string: str, encoding_name: str) -> int:
     return num_tokens
 
 
-def split_strings_by_logic(
-    list_of_string: List[str],
-    max_tokens: int,
-    list_of_splitters: List[str],
-    final_splitter: str,
-) -> List[str]:
-    """Splits a markdown string into a list of strings based on the logic of the markdown."""
+def remove_markdown_index_links(markdown_text):
+    # Regex patterns
+    list_item_link_pattern = re.compile(
+        r"^\s*\*\s*\[[^\]]+\]\([^\)]+\)\s*$", re.MULTILINE
+    )
+    list_item_header_link_pattern = re.compile(
+        r"^\s*\*\s*#+\s*\[[^\]]+\]\([^\)]+\)\s*$", re.MULTILINE
+    )
+    header_link_pattern = re.compile(r"^\s*#+\s*\[[^\]]+\]\([^\)]+\)\s*$", re.MULTILINE)
 
-    # Create an empty list to store the resulting strings
-    result = []
+    # Remove matches
+    cleaned_text = re.sub(list_item_header_link_pattern, "", markdown_text)
+    cleaned_text = re.sub(list_item_link_pattern, "", cleaned_text)
+    cleaned_text = re.sub(header_link_pattern, "", cleaned_text)
 
-    # Iterate over each markdown string in the list
-    for markdown in list_of_string:
-        # Get the number of tokens in the markdown string
-        num_tokens = num_tokens_from_string(markdown, default_encoder)
+    # Removing extra newlines resulting from removals
+    cleaned_text = re.sub(r"\n\s*\n", "\n", cleaned_text)
+    cleaned_text = re.sub(
+        r"^\s*\n", "", cleaned_text, flags=re.MULTILINE
+    )  # Remove leading newlines
 
-        # If the number of tokens is less than or equal to max_tokens, add the markdown string to the result list
-        if num_tokens <= max_tokens:
-            result.append(markdown)
-        else:
-            # Split the markdown string using each splitter in the list
-            split_strings = [
-                splitter.split_text(markdown) for splitter in list_of_splitters
-            ]
-
-            # Flatten the list of split strings
-            split_strings = [
-                split_string for sublist in split_strings for split_string in sublist
-            ]
-
-            # Check if any of the resulting strings are shorter than or equal to max_tokens
-            for split_string in split_strings:
-                if num_tokens_from_string(split_string, default_encoder) <= max_tokens:
-                    result.append(split_string)
-
-            # If none of the splitters resulted in strings shorter than or equal to max_tokens, split using the final_splitter
-            if len(result) == 0:
-                split_strings = final_splitter.split_text(markdown)
-                result.extend(split_strings)
-
-    # Return the list of resulting strings
-    return result
+    return cleaned_text
 
 
-def add_token_length_to_document(document):
+def add_length_to_document(document):
     """Adds the number of tokens in a document to the document."""
 
     document.metadata["token_count"] = num_tokens_from_string(
         document.page_content, default_encoder
     )
 
+    document.metadata["char_count"] = len(document.page_content)
+
     return document
 
 
-def split_documents_by_chunker(
-    documents: List, max_tokens: int, final_splitter
-) -> List[str]:
-    # apply add_token_length_to_document to each document in the list
-
-    document_list = [add_token_length_to_document(doc) for doc in documents]
+def split_long_documents_in_list(documents, max_tokens, max_chars) -> List[str]:
+    document_list = [add_length_to_document(doc) for doc in documents]
 
     print("total document count:", len(document_list))
 
@@ -97,13 +105,19 @@ def split_documents_by_chunker(
     ]
 
     print("too long document count:", len(list_of_too_long_docs))
-
     if len(list_of_too_long_docs) > 0:
-        shortened_documents = final_splitter.split_documents(list_of_too_long_docs)
-        new_short_docs = [
-            add_token_length_to_document(doc) for doc in shortened_documents
-        ]
-        list_of_short_docs.extend(new_short_docs)
-        return list_of_short_docs
+        for document in list_of_too_long_docs:
+            # remove markdown index links on all the content
+            document.page_content = remove_markdown_index_links(document.page_content)
 
-    return list_of_short_docs
+        list_of_too_long_docs = text_splitter.split_documents(list_of_too_long_docs)
+
+    all_docs = list_of_short_docs + list_of_too_long_docs
+    print("total document count after splitting:", len(all_docs))
+
+    # for all documents, if the char count is too high, crop the text by characters
+    for document in all_docs:
+        if document.metadata["char_count"] > max_chars:
+            document.page_content = crop_by_chars(document.page_content)
+
+    return all_docs
