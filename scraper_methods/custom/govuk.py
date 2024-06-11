@@ -10,9 +10,9 @@ import logging
 from core_utils import (
     return_excluded_domains,
     generate_vectorstore,
-    delete_duplicate_chunks_from_store,
     add_document_list_to_vectorstore,
 )
+
 
 # Configure logging
 logging.basicConfig(
@@ -106,11 +106,6 @@ def expand_lists_in_docs(document_list):
     return new_list
 
 
-def add_document_list_to_db(document_list, vectorstore, bulk_size=20000):
-    added_docs = vectorstore.add_documents(document_list, bulk_size=bulk_size)
-    return added_docs
-
-
 def scrape_govuk_child_sitemap_df(
     site_df, vectorstore, batch_size=1000, retry_attempts=3, token_chunk_size=512
 ):
@@ -155,7 +150,9 @@ def scrape_govuk_child_sitemap_df(
 
         for attempt in range(1, retry_attempts + 1):
             try:
-                add_document_list_to_vectorstore(docs_with_content, vectorstore)
+                add_document_list_to_vectorstore(
+                    docs_with_content, vectorstore, batch_size=10
+                )
                 break  # Exit loop if successful
             except Exception as e:
                 logging.debug(f"Attempt {attempt} failed: {e}")
@@ -179,6 +176,8 @@ def iterative_govuk_scrape(domains_to_exclude=None, retry_attempts=3, **kwargs):
         None
 
     """
+
+    batch_size = kwargs.get("batch_size", None)
 
     govuk_sitemap = "https://www.gov.uk/sitemap.xml"
 
@@ -205,12 +204,10 @@ def iterative_govuk_scrape(domains_to_exclude=None, retry_attempts=3, **kwargs):
 
             logging.debug(f"Number of rows in dataframe: {len(df)}")
             scrape_govuk_child_sitemap_df(
-                df, vectorstore, retry_attempts=retry_attempts
+                df, vectorstore, retry_attempts=retry_attempts, batch_size=batch_size
             )
 
         except Exception as e:
             print(f"Error processing sitemap {sitemap}: {e}")
             # print error
             logging.debug(e)
-
-        delete_duplicate_chunks_from_store(vectorstore)

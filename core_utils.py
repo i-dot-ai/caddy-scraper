@@ -11,22 +11,19 @@ from typing import List
 import html2text
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
-from joblib import Memory
 from langchain_community.document_loaders import AsyncHtmlLoader, DataFrameLoader
 from langchain_community.document_transformers import BeautifulSoupTransformer
 
-from generate_vectorstore import vectorstore
-from chunking import split_long_documents_in_list
+from generate_vectorstore import vectorstore, embedding_model
+from chunking import (
+    split_short_and_long_documents,
+    chunk_document_embedding_and_add_to_db,
+)
 from opensearchpy import helpers
 import time
 import functools
 import traceback
 
-
-LOCATION = "./cachedir"
-MEMORY = Memory(LOCATION, verbose=0)
-
-# TODO REMOVE CACHING
 
 load_dotenv()  # take environment variables from .env.
 
@@ -110,7 +107,6 @@ def remove_anchor_urls(urls):
     return cleaned_urls
 
 
-@MEMORY.cache
 def crawl_url_batch(
     url_list: List,
     domain_description: str,
@@ -255,7 +251,13 @@ def generate_vectorstore():
 
 @retry()
 def add_document_list_to_vectorstore(
-    document_list, vectorstore, batch_size=50, retry_count=3, maxiumum_token_length=512
+    document_list,
+    vectorstore,
+    batch_size=50,
+    retry_count=3,
+    maximum_token_length=512,
+    maximum_character_length=2000,
+    request_timeout=90,
 ):
     """Takes a list of documents, and adds them to the vectorstore in batches
 
@@ -272,16 +274,22 @@ def add_document_list_to_vectorstore(
     print("beginning to shorten long documents")
     print("initial document count:", len(document_list))
 
-    shortened_documents = split_long_documents_in_list(document_list, 510, 2047)
+    list_of_short_docs, list_of_too_long_docs = split_short_and_long_documents(
+        document_list, maximum_token_length, max_chars=maximum_character_length
+    )
 
-    print("shortened document count:", len(shortened_documents))
-    document_list = shortened_documents
+    print("too long document count:", len(list_of_too_long_docs))
+    print("short document count:", len(list_of_short_docs))
+
+    print("beginning to add short documents to vectorstore")
+
+    docs_to_add = list_of_short_docs
 
     added_docs = 0
-    num_docs = len(document_list)
-    num_batches = (num_docs // batch_size) + 1
-
-    print("ending length of document list:", len(document_list))
+    num_docs = len(docs_to_add)
+    num_batches = (
+        num_docs + batch_size - 1
+    ) // batch_size  # Changed to ensure correct batch count
 
     print(f"Adding {num_docs} documents to the vectorstore in {num_batches} batches")
 
@@ -289,21 +297,36 @@ def add_document_list_to_vectorstore(
         print(f"Adding batch {i+1} of {num_batches}")
         start = i * batch_size
         end = min((i + 1) * batch_size, num_docs)
-        batch = document_list[start:end]
+        batch = docs_to_add[start:end]
 
         retry = 0
         while retry < retry_count:
             try:
-                vectorstore.add_documents(batch, bulk_size=2000)
+                vectorstore.add_documents(
+                    batch, bulk_size=2000, timeout=request_timeout
+                )
                 added_docs += len(batch)
                 print("added batch", i + 1)
                 break
             except Exception:
                 retry += 1
                 print(f"Failed to add batch {i+1}. Retrying... ({retry}/{retry_count})")
+
+                print(batch)
                 # print the full text of the exception
                 print(traceback.format_exc())
                 time.sleep(1)
+
+    print(f"Added {added_docs} documents to the vectorstore")
+
+    print("beggining to add long documents to vectorstore")
+    chunk_document_embedding_and_add_to_db(
+        list_of_too_long_docs,
+        vectorstore,
+        max_chars=maximum_character_length,
+        embedding_model=embedding_model,
+    )
+    print("added long documents to vectorstore")
 
     return added_docs
 

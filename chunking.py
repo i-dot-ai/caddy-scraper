@@ -1,6 +1,11 @@
 import tiktoken
 from typing import List
-from langchain_text_splitters import CharacterTextSplitter
+from langchain_text_splitters import (
+    CharacterTextSplitter,
+    RecursiveCharacterTextSplitter,
+)
+
+
 import re
 
 default_encoder = "cl100k_base"
@@ -9,6 +14,14 @@ encoding = tiktoken.get_encoding(default_encoder)
 
 text_splitter = CharacterTextSplitter.from_tiktoken_encoder(
     encoding_name=default_encoder, chunk_size=512, chunk_overlap=50
+)
+
+text_splitter = RecursiveCharacterTextSplitter(
+    # Set a really small chunk size, just to show.
+    chunk_size=2048,
+    chunk_overlap=100,
+    length_function=len,
+    is_separator_regex=False,
 )
 
 
@@ -91,10 +104,56 @@ def add_length_to_document(document):
     return document
 
 
+def chunk_document_embedding_and_add_to_db(
+    document_list,
+    vectorstore,
+    max_chars,
+    embedding_model,
+    batch_size=100,
+    retry_count=5,
+):
+    """Chunks a document based on the given splitter, but retains the original text.
+
+    Returns a list of new documents.
+    """
+
+    def process_chunk(chunk):
+        chunk_full_page_content = [doc.page_content for doc in chunk]
+        chunk_cropped_page_content = [
+            crop_by_chars(doc.page_content, max_chars) for doc in chunk
+        ]
+        chunk_metadata = [doc.metadata for doc in chunk]
+        chunk_embeddings = embedding_model.embed_documents(chunk_cropped_page_content)
+        chunk_embedding_tuples = list(zip(chunk_full_page_content, chunk_embeddings))
+        return vectorstore.add_embeddings(
+            text_embeddings=chunk_embedding_tuples,
+            metadatas=chunk_metadata,
+            bulk_size=500,
+        )
+
+    chunks = [
+        document_list[i : i + batch_size]
+        for i in range(0, len(document_list), batch_size)
+    ]
+
+    for chunk in chunks:
+        success = False
+        attempts = 0
+        while not success and attempts < retry_count:
+            try:
+                embeddings_added_to_db = process_chunk(chunk)
+                success = True
+            except Exception as e:
+                attempts += 1
+                if attempts >= retry_count:
+                    raise e
+                print(f"Attempt {attempts} failed for chunk, retrying...")
+
+    return embeddings_added_to_db
+
+
 def split_long_documents_in_list(documents, max_tokens, max_chars) -> List[str]:
     document_list = [add_length_to_document(doc) for doc in documents]
-
-    print("total document count:", len(document_list))
 
     list_of_too_long_docs = [
         doc for doc in document_list if doc.metadata["token_count"] > max_tokens
@@ -104,16 +163,14 @@ def split_long_documents_in_list(documents, max_tokens, max_chars) -> List[str]:
         doc for doc in document_list if doc.metadata["token_count"] <= max_tokens
     ]
 
-    print("too long document count:", len(list_of_too_long_docs))
     if len(list_of_too_long_docs) > 0:
         for document in list_of_too_long_docs:
             # remove markdown index links on all the content
             document.page_content = remove_markdown_index_links(document.page_content)
 
-        list_of_too_long_docs = text_splitter.split_documents(list_of_too_long_docs)
+    split_long_document_list = text_splitter.split_documents(list_of_too_long_docs)
 
-    all_docs = list_of_short_docs + list_of_too_long_docs
-    print("total document count after splitting:", len(all_docs))
+    all_docs = list_of_short_docs + split_long_document_list
 
     # for all documents, if the char count is too high, crop the text by characters
     for document in all_docs:
@@ -121,3 +178,60 @@ def split_long_documents_in_list(documents, max_tokens, max_chars) -> List[str]:
             document.page_content = crop_by_chars(document.page_content)
 
     return all_docs
+
+
+def split_short_and_long_documents(
+    documents,
+    max_tokens,
+    max_chars,
+    cleaning_function_list=[remove_markdown_index_links],
+):
+    document_list = [add_length_to_document(doc) for doc in documents]
+
+    list_of_too_long_docs = [
+        doc for doc in document_list if doc.metadata["token_count"] > max_tokens
+    ]
+
+    list_of_short_docs = [
+        doc for doc in document_list if doc.metadata["token_count"] <= max_tokens
+    ]
+    # Use a temporary list to hold documents that need to be moved
+    documents_to_move = []
+
+    for document in list_of_short_docs:
+        if document.metadata["char_count"] > max_chars:
+            documents_to_move.append(document)
+
+    # Move documents to the long docs list
+    for document in documents_to_move:
+        list_of_too_long_docs.append(document)
+        list_of_short_docs.remove(document)
+
+    # apply cleaning functions to all documents in too_long_docs
+    for document in list_of_too_long_docs:
+        for cleaning_function in cleaning_function_list:
+            document.page_content = cleaning_function(document.page_content)
+
+    # recalculate document lengths and split into long and short docs according to token and character count now cleaning functions have been applied
+    document_list = list_of_short_docs + list_of_too_long_docs
+    document_list = [add_length_to_document(doc) for doc in document_list]
+
+    list_of_too_long_docs = [
+        doc for doc in document_list if doc.metadata["token_count"] > max_tokens
+    ]
+
+    list_of_short_docs = [
+        doc for doc in document_list if doc.metadata["token_count"] <= max_tokens
+    ]
+
+    documents_to_move = []
+
+    for document in list_of_short_docs:
+        if document.metadata["char_count"] > max_chars:
+            documents_to_move.append(document)
+
+    for document in documents_to_move:
+        list_of_too_long_docs.append(document)
+        list_of_short_docs.remove(document)
+
+    return list_of_short_docs, list_of_too_long_docs
