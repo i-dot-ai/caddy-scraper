@@ -141,15 +141,13 @@ def chunk_document_embedding_and_add_to_db(
         attempts = 0
         while not success and attempts < retry_count:
             try:
-                embeddings_added_to_db = process_chunk(chunk)
+                process_chunk(chunk)
                 success = True
             except Exception as e:
                 attempts += 1
                 if attempts >= retry_count:
                     raise e
                 print(f"Attempt {attempts} failed for chunk, retrying...")
-
-    return embeddings_added_to_db
 
 
 def split_long_documents_in_list(documents, max_tokens, max_chars) -> List[str]:

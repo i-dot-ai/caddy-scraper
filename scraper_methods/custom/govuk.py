@@ -151,7 +151,7 @@ def scrape_govuk_child_sitemap_df(
         for attempt in range(1, retry_attempts + 1):
             try:
                 add_document_list_to_vectorstore(
-                    docs_with_content, vectorstore, batch_size=10
+                    docs_with_content, vectorstore, batch_size=batch_size
                 )
                 break  # Exit loop if successful
             except Exception as e:
@@ -177,7 +177,7 @@ def iterative_govuk_scrape(domains_to_exclude=None, retry_attempts=3, **kwargs):
 
     """
 
-    batch_size = kwargs.get("batch_size", None)
+    batch_size = kwargs.get("batch_size", 500)
 
     govuk_sitemap = "https://www.gov.uk/sitemap.xml"
 
@@ -191,6 +191,23 @@ def iterative_govuk_scrape(domains_to_exclude=None, retry_attempts=3, **kwargs):
     print(f"Number of sitemaps found: {len(website_url_df_list)}")
 
     for sitemap in tqdm(website_url_df_list):
+        df = pd.DataFrame(
+            columns=["loc", "changefreq", "priority", "domain", "sitemap_name"]
+        )
+
+        df = pd.concat([df, sitemap], ignore_index=True)
+
+        if domains_to_exclude:
+            # remove any rows where the loc contains any of the excluded domains
+            df = df[~df["loc"].str.contains("|".join(domains_to_exclude))]
+
+        logging.debug(f"Number of rows in dataframe: {len(df)}")
+        scrape_govuk_child_sitemap_df(
+            df, vectorstore, retry_attempts=retry_attempts, batch_size=batch_size
+        )
+
+
+"""    for sitemap in tqdm(website_url_df_list):
         try:
             df = pd.DataFrame(
                 columns=["loc", "changefreq", "priority", "domain", "sitemap_name"]
@@ -210,4 +227,4 @@ def iterative_govuk_scrape(domains_to_exclude=None, retry_attempts=3, **kwargs):
         except Exception as e:
             print(f"Error processing sitemap {sitemap}: {e}")
             # print error
-            logging.debug(e)
+            logging.debug(e)"""
