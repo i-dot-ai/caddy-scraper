@@ -1,0 +1,31 @@
+[
+    {
+        "base_domain": "https://www.citizensadvice.org.uk/advisernet",
+        "domain_description": "AdvisorNet",
+        "scrape_method": "brute",
+        "scrape_args": {
+            "authentication_cookie": ".CitizensAdviceLogin=0D4FDCCD2D520EB9749400EC8AA4DE563F0A35B65B42C74C10E84E811105766B860A5FB9292F98E2A5F4CED2D0552621665C6DFF74EED3B2C351FCB858EC1C376B364355F762C0A7E9EEE162D14B7F433DDEB5C593ACE8969414544FA6639323A185D2EEAC43B6A5563129E0E1E33199113620D7",
+            "content_div_ids": ["main-content", "cads-main-content"],
+            "content_div_classes": ["main-content", "cads-main-content"],
+            "scrape_depth": 4,
+            "batch_size": 1000
+        }
+    },
+    {
+        "base_domain": "https://www.citizensadvice.org.uk/",
+        "domain_description": "Citizens Advice",
+        "scrape_method": "sitemap",
+        "scrape_args": {
+            "sitemap_url": "https://www.citizensadvice.org.uk/sitemap.xml",
+            "scrape_depth": 4,
+            "content_div_ids": ["main-content", "cads-main-content"],
+            "content_div_classes": ["main-content", "cads-main-content"],
+            "batch_size": 1000
+        }
+    },
+    {
+        "base_domain": "https://www.gov.uk/",
+        "domain_description": "GOV.UK",
+        "scrape_method": "govuk"
+    }
+]
