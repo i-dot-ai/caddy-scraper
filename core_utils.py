@@ -371,6 +371,37 @@ def extract_urls(base_url, text):
     return urls
 
 
+def remove_markdown_index_links(markdown_text: str) -> str:
+    """Clean markdown text by removing index links.
+
+    Args:
+        markdown_text (str): markdown text to clean.
+
+    Returns:
+        str: cleaned markdown string.
+    """
+    # Regex patterns
+    list_item_link_pattern = re.compile(
+        r"^\s*\*\s*\[[^\]]+\]\([^\)]+\)\s*$", re.MULTILINE
+    )
+    list_item_header_link_pattern = re.compile(
+        r"^\s*\*\s*#+\s*\[[^\]]+\]\([^\)]+\)\s*$", re.MULTILINE
+    )
+    header_link_pattern = re.compile(
+        r"^\s*#+\s*\[[^\]]+\]\([^\)]+\)\s*$", re.MULTILINE
+    )
+    # Remove matches
+    cleaned_text = re.sub(list_item_header_link_pattern, "", markdown_text)
+    cleaned_text = re.sub(list_item_link_pattern, "", cleaned_text)
+    cleaned_text = re.sub(header_link_pattern, "", cleaned_text)
+    # Removing extra newlines resulting from removals
+    cleaned_text = re.sub(r"\n\s*\n", "\n", cleaned_text)
+    cleaned_text = re.sub(
+        r"^\s*\n", "", cleaned_text, flags=re.MULTILINE
+    )  # Remove leading newlines
+    return cleaned_text
+
+
 def check_if_link_in_base_domain(base_url, link):
     """checks if a link is in the same domain as the base url. If it is, returns the link"""
 

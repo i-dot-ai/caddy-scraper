@@ -12,7 +12,14 @@ from langchain_community.document_transformers import BeautifulSoupTransformer
 import pandas as pd
 from tqdm import tqdm
 
-from core_utils import extract_urls, check_if_link_in_base_domain, get_all_urls, remove_anchor_urls, retry
+from core_utils import (
+    extract_urls,
+    check_if_link_in_base_domain,
+    get_all_urls,
+    remove_anchor_urls,
+    remove_markdown_index_links,
+    retry,
+)
 
 
 class CaddyScraper:
@@ -222,7 +229,7 @@ class CaddyScraper:
                 main_section_html = soup
             if len(main_section_html) > 0:
                 current_page_markdown = html2text.html2text(str(main_section_html))
-                current_page_markdown = self.remove_markdown_index_links(
+                current_page_markdown = remove_markdown_index_links(
                     current_page_markdown
                 )
                 page_dict = {
