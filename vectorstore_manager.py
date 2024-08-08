@@ -2,6 +2,7 @@
 
 import json
 import os
+from tqdm import tqdm
 from typing import List, Tuple
 
 from langchain_community.document_loaders import DataFrameLoader
@@ -9,6 +10,7 @@ from langchain_community.embeddings import BedrockEmbeddings, HuggingFaceEmbeddi
 from langchain_community.vectorstores import OpenSearchVectorSearch
 from langchain_core import embeddings, documents
 from langchain_text_splitters import RecursiveCharacterTextSplitter, base
+from opensearchpy import RequestsHttpConnection
 import pandas as pd
 
 from core_utils import retry
@@ -45,7 +47,7 @@ class VectorStoreManager:
 
     def run(self):
         """Run VectorStoreManager, loading documents and uploading them to vectorstore."""
-        for file in os.listdir(self.scrape_output_path):
+        for file in tqdm(os.listdir(self.scrape_output_path)):
             path = os.path.join(self.scrape_output_path, file)
             docs = self.load_documents(path)
             self.add_documents_to_vectorstore(docs)
@@ -107,6 +109,7 @@ class VectorStoreManager:
             opensearch_url=opensearch_url,
             http_auth=authentication_creds,
             embedding_function=self.embedding_model,
+            connection_class=RequestsHttpConnection,
         )
         if delete_existing:
             if vectorstore.index_exists(index_name):
