@@ -10,6 +10,7 @@ import html2text
 from langchain_community.document_loaders import AsyncHtmlLoader
 from langchain_community.document_transformers import BeautifulSoupTransformer
 import pandas as pd
+import requests
 from tqdm import tqdm
 
 from core_utils import (
@@ -30,42 +31,42 @@ class CaddyScraper:
         base_url: str,
         sitemap_url: Optional[str] = None,
         crawling_method: str = "brute",
+        downloading_method: str = "scrape",
         scrape_depth: Optional[int] = 4,
-        div_classes: Optional[List] = None,
-        div_ids: Optional[List] = None,
+        div_classes: Optional[List] = ["main-content", "cads-main-content"],
+        div_ids: Optional[List] = ["main-content", "cads-main-content"],
         batch_size: int = 1000,
         output_dir: str = "scrape_result",
-        authenticate: bool = False,
     ):
         """Initialise CaddyScraper.
 
         Args:
             base_url (str): base URL of the website to be scraped
             sitemap_url (Optional[str]): sitemap of domain, if available. Defaults to None.
-            crawling_method (str): Crawling method for fetching URLS to scrape options: ["brute", "sitemap"]. Defaults to "brute".
+            crawling_method (str): Crawling method for fetching URLS to download options: ["brute", "sitemap"]. Defaults to "brute".
+            downloading_method (str): Downloading method for fetched URLS: ["scrape", "api"]. Defaults to "scrape".
             scrape_depth (Optional[int]): depth of recursive crawler used by "brute" crawling method. Defaults to 4.
-            div_classes: (Optional[List]): HTML div classes to scrape. Defaults to None,
-            div_ids: (Optional[List]) = HTML div ids to scrape. Defaults to None,
+            div_classes: (Optional[List]): HTML div classes to scrape. Defaults to ["main-content", "cads-main-content"],
+            div_ids: (Optional[List]) = HTML div ids to scrape. Defaults to ["main-content", "cads-main-content"],
             batch_size (int): Number of URLS to be scraped in a batch. Defaults to 1000.
             output_dir (str): output directory to store scraper results. Defaults to "scrape_result".
-            authenticate (bool): whether or not to produce an authentication cookie for domain access. Defaults to False.
         """
         self.base_url = base_url
         self.sitemap_url = sitemap_url
         self.crawling_method = crawling_method
+        self.downloading_method = downloading_method
         self.scrape_depth = scrape_depth
         self.div_classes = div_classes
         self.div_ids = div_ids
         self.batch_size = batch_size
         self.output_dir = output_dir
         self.excluded_domains = self.get_excluded_domains()
-        self.authentication_cookie = self.get_authentication_cookie(authenticate)
 
     def run(self):
-        """Run the caddy scrapper, fetching relevant urls and saving their scraped content."""
+        """Run the caddy scrapper, fetching relevant urls then downloading and saving their scraped content."""
         urls = self.fetch_urls()
         print(f"{len(urls)} urls fetched")
-        self.scrape_urls(urls)
+        self.download_urls(urls)
 
     def get_excluded_domains(self) -> List[str]:
         """Returns the list of excluded domains from the json file as a list
@@ -189,7 +190,7 @@ class CaddyScraper:
             )
         ]
 
-    def scrape_urls(self, urls: List[str]) -> List[Dict[str, str]]:
+    def download_urls(self, urls: List[str]) -> List[Dict[str, str]]:
         """Split urls into batches and scrape their content.
 
         Args:
@@ -202,8 +203,11 @@ class CaddyScraper:
             urls[i : i + self.batch_size] for i in range(0, len(urls), self.batch_size)
         ]
         for ind, url_batch in enumerate(url_batches):
-            scraped_pages = self.scrape_url_batch(url_batch)
-            self.save_scrape_results(scraped_pages, ind)
+            if self.downloading_method == "scrape":
+                results = self.scrape_url_batch(url_batch)
+            elif self.downloading_method == "api":
+                results = self.download_batch_from_govuk_api(url_batch)
+            self.save_results(results, ind)
 
     @retry()
     def scrape_url_batch(self, url_list: List[str]) -> List[Dict[str, str]]:
@@ -240,46 +244,65 @@ class CaddyScraper:
                 scraped_pages.append(page_dict)
         return scraped_pages
 
-    def remove_markdown_index_links(self, markdown_text: str) -> str:
-        """Clean markdown text by removing index links.
+    @retry()
+    def download_batch_from_govuk_api(
+        self, url_list: List[str], min_body_length: int = 50
+    ) -> List[Dict[str, str]]:
+        """Use the gov.uk api to download url content.
 
         Args:
-            markdown_text (str): markdown text to clean.
+            url_list (List[str]): list of urls to download.
+            min_body_length (int): min body length for storage. Defaults to 10.
+
+        Raises:
+            ValueError: will be raised if gov.uk url is not the base_url.
+            ValueError: will be raised if non gov.uk url is passed to the api.
+            requests.exceptions.HTTPError: will be raised if api call fails.
 
         Returns:
-            str: cleaned markdown string.
+            List[Dict[str, str]]: list of dictionaries containing page content and metadata.
         """
-        # Regex patterns
-        list_item_link_pattern = re.compile(
-            r"^\s*\*\s*\[[^\]]+\]\([^\)]+\)\s*$", re.MULTILINE
-        )
-        list_item_header_link_pattern = re.compile(
-            r"^\s*\*\s*#+\s*\[[^\]]+\]\([^\)]+\)\s*$", re.MULTILINE
-        )
-        header_link_pattern = re.compile(
-            r"^\s*#+\s*\[[^\]]+\]\([^\)]+\)\s*$", re.MULTILINE
-        )
-        # Remove matches
-        cleaned_text = re.sub(list_item_header_link_pattern, "", markdown_text)
-        cleaned_text = re.sub(list_item_link_pattern, "", cleaned_text)
-        cleaned_text = re.sub(header_link_pattern, "", cleaned_text)
-        # Removing extra newlines resulting from removals
-        cleaned_text = re.sub(r"\n\s*\n", "\n", cleaned_text)
-        cleaned_text = re.sub(
-            r"^\s*\n", "", cleaned_text, flags=re.MULTILINE
-        )  # Remove leading newlines
-        return cleaned_text
+        if "gov.uk" not in self.base_url:
+            raise ValueError("Can only use gov.uk API to scrape government urls.")
+        pages = []
+        for url in url_list:
+            if url.startswith(self.base_url):
+                api_call = url.replace(self.base_url, "https://www.gov.uk/api/content/")
+            else:
+                raise ValueError("Non gov.uk url passed to api.")
+            response = requests.get(api_call, timeout=100)
+            if response.status_code != 200:
+                raise requests.exceptions.HTTPError
+            response_json = response.json()
+            details = response_json.get("details", {})
+            json_body = details.get("body")
+            if json_body is None:
+                parts = details.get("parts", [])
+                json_body = "".join(part.get("body", "") for part in parts)
+            if len(json_body) > min_body_length:
+                linked_urls = re.findall(r"(?P<url>https?://[^\s]+)", json_body)
+                if len(linked_urls) > 0:
+                    linked_urls = [u[:-1] for u in set(linked_urls)]
+                pages.append(
+                    {
+                        "source_url": url,
+                        "markdown": json_body,
+                        "markdown_length": len(json_body),
+                        "linked_urls": linked_urls,
+                    }
+                )
+        return pages
 
-    def save_scrape_results(
-        self, scraped_pages: List[Dict[str, str]], file_index: Optional[int] = None
+    def save_results(
+        self, pages: List[Dict[str, str]], file_index: Optional[int] = None
     ):
-        """Save results of a scrape to file.
+        """Save downloaded pages to file.
 
         Args:
-            scraped_pages (List[Dict[str, str]]): scraped web page data.
+            pages (List[Dict[str, str]]): downloaded web pages including meta-data.
             file_index (Optional[int]): batch index, used to create file name.
         """
         if not os.path.exists(self.output_dir):
             os.mkdir(self.output_dir)
         with open(f"{self.output_dir}/scrape_result_{file_index}.json", "w+") as f:
-            json.dump(scraped_pages, f)
+            json.dump(pages, f)
