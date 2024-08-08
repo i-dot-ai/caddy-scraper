@@ -126,9 +126,8 @@ class CaddyScraper:
             links (List[str]): a list of links found on the pages.
         """
         bs_transformer = BeautifulSoupTransformer()
-        if self.authentication_cookie:
-            print(self.authentication_cookie)
-            cookie_dict = {"Cookie": self.authentication_cookie}
+        if "advisernet" in self.base_url:
+            cookie_dict = {"Cookie": os.getenv("ADVISOR_NET_AUTHENTICATION")}
             loader = AsyncHtmlLoader(self.base_url, header_template=cookie_dict)
         else:
             loader = AsyncHtmlLoader(self.base_url)
@@ -137,7 +136,7 @@ class CaddyScraper:
         page_html = BeautifulSoup(root_page.page_content, features="lxml")
         extracted_links = bs_transformer.extract_tags(str(page_html), ["a"])
         links_list = extract_urls(self.base_url, extracted_links)
-        if self.authentication_cookie:
+        if cookie_dict:
             loader = AsyncHtmlLoader(links_list, header_template=cookie_dict)
         else:
             loader = AsyncHtmlLoader(links_list)
@@ -157,7 +156,7 @@ class CaddyScraper:
                 links += current_page_links
                 links = self.remove_excluded_domains(links)
                 links = remove_anchor_urls(list(set(links)))
-                if self.authentication_cookie:
+                if cookie_dict:
                     loader = AsyncHtmlLoader(links, header_template=cookie_dict)
                 else:
                     loader = AsyncHtmlLoader(links)
@@ -219,7 +218,11 @@ class CaddyScraper:
         Returns:
             List[Dict[str, str]]: List of dicts containing scraped data from urls.
         """
-        loader = AsyncHtmlLoader(url_list)
+        if "advisernet" in self.base_url:
+            cookie_dict = {"Cookie": os.getenv("ADVISOR_NET_AUTHENTICATION")}
+            loader = AsyncHtmlLoader(url_list, cookie_dict)
+        else:
+            loader = AsyncHtmlLoader(url_list)
         docs = loader.load()
         scraped_pages = []
         for page in tqdm(docs):
