@@ -64,6 +64,24 @@ def retry(num_retries=3, delay=1, backoff=2, exceptions=(Exception,)):
     return decorator_retry
 
 
+def remove_anchor_urls(urls):
+    """
+    Removes anchor URLs (URLs with a # followed by text at the end) from a list of URLs.
+    Args:
+        urls (list): A list of URLs (strings).
+    Returns:
+        list: A new list containing only the URLs that are not anchor URLs.
+    """
+    anchor_pattern = re.compile(r"#.*$")
+    cleaned_urls = []
+
+    for url in urls:
+        if not anchor_pattern.search(url):
+            cleaned_urls.append(url)
+
+    return cleaned_urls
+
+
 def crawl_url_batch(
     url_list: List,
     domain_description: str,
