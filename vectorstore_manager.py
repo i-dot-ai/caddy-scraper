@@ -23,8 +23,8 @@ class VectorStoreManager:
         authentication_creds: Tuple[str, str],
         opensearch_url: str,
         scrape_output_path: str = "scrape_result",
+        embedding_model: str = "bedrock",
         delete_existing_index: bool = True,
-
     ):
         """Initialise VectorStoreManager.
 
@@ -33,10 +33,11 @@ class VectorStoreManager:
             authentication_creds (Tuple[str, str]): open search admin credentials (username, password).
             opensearch_url (str): open search url.
             scrape_output_path (str): dir containing json scrape results. Defaults to 'scrape_result/result.json'.
+            embedding_model (str): which embedding model to use ['bedrock', 'huggingface']. Defaults to 'bedrock'.
             delete_existing_index (bool): whether or not to delete an index of the same name if it exists. Defaults to True.
         """
         self.scrape_output_path = scrape_output_path
-        self.embedding_model = self.get_embedding_model()
+        self.embedding_model = self.get_embedding_model(embedding_model)
         self.vectorstore = self.get_vectorstore(
             index_name, opensearch_url, authentication_creds, delete_existing_index
         )
@@ -49,21 +50,26 @@ class VectorStoreManager:
             docs = self.load_documents(path)
             self.add_documents_to_vectorstore(docs)
 
-    def get_embedding_model(self, bedrock: bool = False) -> embeddings.Embeddings:
+    def get_embedding_model(self, embedding_model: str) -> embeddings.Embeddings:
         """Get an embedding model for the vectorstore.
 
         Args:
-            bedrock (bool): whether or not to use bedrock embeddings. Defaults to False.
+            embedding_model (str): which embedding model to use ['bedrock', 'huggingface']
 
         Returns:
             Embeddings: loaded embedding model.
         """
-        if bedrock:
-            # TODO...
-            return BedrockEmbeddings()
-        else:
+        if embedding_model == "bedrock":
+            return BedrockEmbeddings(
+                model_id="amazon.titan-embed-image-v1", region_name="eu-west-3"
+            )
+        elif embedding_model == "huggingface":
             return HuggingFaceEmbeddings(
                 model_name="sentence-transformers/all-MiniLM-L6-v2"
+            )
+        else:
+            raise ValueError(
+                "Invalid embedding model, must be one of  ['bedrock', 'huggingface']."
             )
 
     def get_text_splitter(self) -> base.TextSplitter:
