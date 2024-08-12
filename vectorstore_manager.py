@@ -63,7 +63,7 @@ class VectorStoreManager:
         """
         if embedding_model == "bedrock":
             return BedrockEmbeddings(
-                model_id="amazon.titan-embed-image-v1", region_name="eu-west-3"
+                model_id="cohere.embed-english-v3", region_name="eu-west-3"
             )
         elif embedding_model == "huggingface":
             return HuggingFaceEmbeddings(
