@@ -64,6 +64,24 @@ def retry(num_retries=3, delay=1, backoff=2, exceptions=(Exception,)):
     return decorator_retry
 
 
+def remove_anchor_urls(urls):
+    """
+    Removes anchor URLs (URLs with a # followed by text at the end) from a list of URLs.
+    Args:
+        urls (list): A list of URLs (strings).
+    Returns:
+        list: A new list containing only the URLs that are not anchor URLs.
+    """
+    anchor_pattern = re.compile(r"#.*$")
+    cleaned_urls = []
+
+    for url in urls:
+        if not anchor_pattern.search(url):
+            cleaned_urls.append(url)
+
+    return cleaned_urls
+
+
 def crawl_url_batch(
     url_list: List,
     domain_description: str,
@@ -351,6 +369,37 @@ def extract_urls(base_url, text):
     urls = list(set(urls))
 
     return urls
+
+
+def remove_markdown_index_links(markdown_text: str) -> str:
+    """Clean markdown text by removing index links.
+
+    Args:
+        markdown_text (str): markdown text to clean.
+
+    Returns:
+        str: cleaned markdown string.
+    """
+    # Regex patterns
+    list_item_link_pattern = re.compile(
+        r"^\s*\*\s*\[[^\]]+\]\([^\)]+\)\s*$", re.MULTILINE
+    )
+    list_item_header_link_pattern = re.compile(
+        r"^\s*\*\s*#+\s*\[[^\]]+\]\([^\)]+\)\s*$", re.MULTILINE
+    )
+    header_link_pattern = re.compile(
+        r"^\s*#+\s*\[[^\]]+\]\([^\)]+\)\s*$", re.MULTILINE
+    )
+    # Remove matches
+    cleaned_text = re.sub(list_item_header_link_pattern, "", markdown_text)
+    cleaned_text = re.sub(list_item_link_pattern, "", cleaned_text)
+    cleaned_text = re.sub(header_link_pattern, "", cleaned_text)
+    # Removing extra newlines resulting from removals
+    cleaned_text = re.sub(r"\n\s*\n", "\n", cleaned_text)
+    cleaned_text = re.sub(
+        r"^\s*\n", "", cleaned_text, flags=re.MULTILINE
+    )  # Remove leading newlines
+    return cleaned_text
 
 
 def check_if_link_in_base_domain(base_url, link):

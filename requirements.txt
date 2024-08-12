@@ -1,6 +1,7 @@
 pandas
 jupyter
 langchain
+langchain-community
 sentence-transformers
 opensearch-py
 boto3
