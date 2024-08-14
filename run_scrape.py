@@ -1,3 +1,6 @@
+"""Script to pull and upload caddy data."""
+import asyncio
+import datetime
 import json
 import os
 
@@ -18,13 +21,14 @@ auth_creds = AWS4Auth(
 )
 
 if __name__ == "__main__":
+    print(f"Script start time: {datetime.datetime.now()}")
     for config in scrap_configs:
-        print(config['base_url'])
+        print(f"Scraping {config['base_url']} \n start time: {datetime.datetime.now()} \n")
         scraper = CaddyScraper(**config)
         scraper.run()
 
     for scrape_dir in ['citizensadvice_scrape', 'advisernet_scrape', "govuk_scrape"]:
-        print(scrape_dir)
+        print(f"Uploading {scrape_dir} \n start time: {datetime.datetime.now()} \n")
         manager = VectorStoreManager(
             index_name=f"{scrape_dir}_db",
             scrape_output_path=scrape_dir,
@@ -32,4 +36,5 @@ if __name__ == "__main__":
             authentication_creds=auth_creds,
             delete_existing_index=False
         )
-        manager.run()
+        asyncio.run(manager.run())
+    print(f"Script finishing time: {datetime.datetime.now()}")
