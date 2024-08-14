@@ -1,9 +1,10 @@
 """Vector store manager module."""
 
+import asyncio
 import json
 import os
 from tqdm import tqdm
-from typing import List, Tuple
+from typing import Any, Callable, List, Tuple
 
 from langchain_community.document_loaders import DataFrameLoader
 from langchain_community.embeddings import BedrockEmbeddings, HuggingFaceEmbeddings
@@ -38,6 +39,7 @@ class VectorStoreManager:
             embedding_model (str): which embedding model to use ['bedrock', 'huggingface']. Defaults to 'bedrock'.
             delete_existing_index (bool): whether or not to delete an index of the same name if it exists. Defaults to True.
         """
+        self.index_name = index_name
         self.scrape_output_path = scrape_output_path
         self.embedding_model = self.get_embedding_model(embedding_model)
         self.vectorstore = self.get_vectorstore(
@@ -45,12 +47,12 @@ class VectorStoreManager:
         )
         self.text_splitter = self.get_text_splitter()
 
-    def run(self):
+    async def run(self):
         """Run VectorStoreManager, loading documents and uploading them to vectorstore."""
         for file in tqdm(os.listdir(self.scrape_output_path)):
             path = os.path.join(self.scrape_output_path, file)
             docs = self.load_documents(path)
-            self.add_documents_to_vectorstore(docs)
+            await self.add_documents_to_vectorstore(docs)
 
     def get_embedding_model(self, embedding_model: str) -> embeddings.Embeddings:
         """Get an embedding model for the vectorstore.
@@ -133,8 +135,8 @@ class VectorStoreManager:
         return self.text_splitter.split_documents(docs)
 
     @retry()
-    def add_documents_to_vectorstore(
-        self, document_list: List[documents.base.Document], bulk_size: int = 20000
+    async def add_documents_to_vectorstore(
+        self, document_list: List[documents.base.Document], bulk_size: int = 500
     ):
         """Takes a list of documents, and adds them to the vectorstore in bulk
 
@@ -142,5 +144,41 @@ class VectorStoreManager:
             document_list (List[documents.base.Document]): list of documents
             bulk_size (int): the size of the bulk to add the documents in
         """
-        added_docs = self.vectorstore.add_documents(document_list, bulk_size=bulk_size)
-        print(f"{len(added_docs)} documents added to Vectorstore.")
+        embeddings = await self.gather_with_concurrency(
+            10,
+            *[
+                self.embedding_model.aembed_documents(
+                    [d.page_content for d in document_list]
+                )
+            ],
+        )
+        for i in range(0, len(document_list), bulk_size):
+            doc_batch =  document_list[i : i + bulk_size]
+            self.vectorstore.add_embeddings(
+                text_embeddings=list(
+                    zip([d.page_content for d in doc_batch], embeddings[0][i : i + bulk_size])
+                ),
+                metadatas=[d.metadata for d in doc_batch],
+                index_name=self.index_name,
+                bulk_size=20000,
+            )
+
+    async def gather_with_concurrency(
+        self, concurrency: int, *coroutines: List[Callable]
+    ) -> List[Any]:
+        """ "Run a number of async coroutines with a concurrency limit.
+
+        Args:
+            concurrency (int): max number of concurrent coroutine runs.
+            coroutines (List[Callable]): list of coroutines to run asynchronously.
+
+        Returns:
+            List[Any]: list of coroutine results.
+        """
+        semaphore = asyncio.Semaphore(concurrency)
+
+        async def semaphore_coroutine(coroutines):
+            async with semaphore:
+                return await coroutines
+
+        return await asyncio.gather(*(semaphore_coroutine(c) for c in coroutines))
