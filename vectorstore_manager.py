@@ -14,7 +14,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter, base
 from opensearchpy import RequestsHttpConnection
 import pandas as pd
 
-from core_utils import retry
+from core_utils import retry, logger
 
 
 class VectorStoreManager:
@@ -50,6 +50,7 @@ class VectorStoreManager:
     async def run(self):
         """Run VectorStoreManager, loading documents and uploading them to vectorstore."""
         for file in tqdm(os.listdir(self.scrape_output_path)):
+            logger.info(f"Uploading {file}")
             path = os.path.join(self.scrape_output_path, file)
             docs = self.load_documents(path)
             await self.add_documents_to_vectorstore(docs)
@@ -114,7 +115,9 @@ class VectorStoreManager:
             connection_class=RequestsHttpConnection,
         )
         if delete_existing:
+            logger.info(f"Checking if index {index_name} exists.")
             if vectorstore.index_exists(index_name):
+                logger.info(f"Deleting existing index {index_name}.")
                 vectorstore.delete_index(index_name)
         return vectorstore
 
@@ -132,6 +135,7 @@ class VectorStoreManager:
         df["raw_markdown"] = df["markdown"]
         loader = DataFrameLoader(df, page_content_column="markdown")
         docs = loader.load()
+        logger.info(f"Loaded {len(docs)} documents from {file_path}")
         return self.text_splitter.split_documents(docs)
 
     @retry()
@@ -153,10 +157,12 @@ class VectorStoreManager:
             ],
         )
         for i in range(0, len(document_list), bulk_size):
-            doc_batch =  document_list[i : i + bulk_size]
+            doc_batch = document_list[i: i + bulk_size]
+            logger.info(f"Adding {len(doc_batch)} documents to vectorstore.")
             self.vectorstore.add_embeddings(
                 text_embeddings=list(
-                    zip([d.page_content for d in doc_batch], embeddings[0][i : i + bulk_size])
+                    zip([d.page_content for d in doc_batch],
+                        embeddings[0][i: i + bulk_size])
                 ),
                 metadatas=[d.metadata for d in doc_batch],
                 index_name=self.index_name,

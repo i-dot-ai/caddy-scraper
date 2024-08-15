@@ -3,6 +3,7 @@ from core_utils import (
     crawl_url_batch,
     generate_vectorstore,
     delete_duplicate_urls_from_store,
+    logger
 )
 from scraper_methods.brute.utils import brute_find_all_links
 
@@ -12,8 +13,9 @@ def brute_scrape_website(base_domain: str, domain_description: str, **kwargs):
     takes a website url, and returns a dataframe with all the site content as markdown
     """
 
-    print(f"Brute force scraping for {domain_description} at {base_domain}")
-    print(f"Additional arguments: {kwargs}")
+    logger.info(f"Brute force scraping for {
+                domain_description} at {base_domain}")
+    logger.info(f"Additional arguments: {kwargs}")
 
     scrape_depth = kwargs.get("scrape_depth", None)
     authentication_cookie = kwargs.get("authentication_cookie", None)
@@ -30,7 +32,7 @@ def brute_scrape_website(base_domain: str, domain_description: str, **kwargs):
     )
 
     url_batches = [
-        all_urls_on_domain[i : i + batch_size]
+        all_urls_on_domain[i: i + batch_size]
         for i in range(0, len(all_urls_on_domain), batch_size)
     ]
 

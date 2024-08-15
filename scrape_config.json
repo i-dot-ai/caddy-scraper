@@ -1,1 +1,21 @@
-[{"base_url": "https://www.citizensadvice.org.uk/", "sitemap_url": "https://www.citizensadvice.org.uk/sitemap.xml", "crawling_method": "sitemap", "output_dir": "citizensadvice_scrape"}, {"base_url": "https://www.citizensadvice.org.uk/advisernet", "crawling_method": "brute", "output_dir": "advisernet_scrape", "scrape_depth": 4}, {"base_url": "https://www.gov.uk/", "sitemap_url": "https://www.gov.uk/sitemap.xml", "crawling_method": "sitemap", "downloading_method": "api", "output_dir": "govuk_scrape"}]
+[
+    {
+        "base_url": "https://www.citizensadvice.org.uk/", 
+        "sitemap_url": "https://www.citizensadvice.org.uk/sitemap.xml", 
+        "crawling_method": "sitemap", 
+        "output_dir": "citizensadvice_scrape"
+    }, 
+    {
+        "base_url": "https://www.citizensadvice.org.uk/advisernet", 
+        "crawling_method": "brute", 
+        "output_dir": "advisernet_scrape", 
+        "scrape_depth": 4
+    }, 
+    {
+        "base_url": "https://www.gov.uk/", 
+        "sitemap_url": "https://www.gov.uk/sitemap.xml", 
+        "crawling_method": "sitemap", 
+        "downloading_method": "api", 
+        "output_dir": "govuk_scrape"
+    }
+]

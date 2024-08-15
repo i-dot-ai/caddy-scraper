@@ -1,0 +1,15 @@
+{
+	"name": "Caddy Scraper - Python 3",
+	"image": "mcr.microsoft.com/devcontainers/python:3.12-bullseye",
+	"features": {
+	},
+	"postCreateCommand": "",
+	"runArgs": [
+	],
+	"customizations": {
+		"vscode": {
+			"extensions": [
+			]
+		}
+	}
+}
