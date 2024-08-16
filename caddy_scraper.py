@@ -128,8 +128,8 @@ class CaddyScraper:
         """
         bs_transformer = BeautifulSoupTransformer()
         if "advisernet" in self.base_url:
-            cookie_dict = {"Cookie": os.getenv(
-                "ADVISOR_NET_AUTHENTICATION")}
+            cookie_dict = {"Cookie": f".CitizensAdviceLogin={os.getenv(
+                "ADVISOR_NET_AUTHENTICATION")}"}
             loader = AsyncHtmlLoader(
                 self.base_url, header_template=cookie_dict)
         else:
@@ -224,8 +224,8 @@ class CaddyScraper:
             List[Dict[str, str]]: List of dicts containing scraped data from urls.
         """
         if "advisernet" in self.base_url:
-            cookie_dict = {"Cookie": os.getenv(
-                "ADVISOR_NET_AUTHENTICATION")}
+            cookie_dict = {"Cookie": f".CitizensAdviceLogin={os.getenv(
+                "ADVISOR_NET_AUTHENTICATION")}"}
             loader = AsyncHtmlLoader(url_list, cookie_dict)
         else:
             loader = AsyncHtmlLoader(url_list)

@@ -22,7 +22,7 @@ auth_creds = AWS4Auth(
 )
 
 if __name__ == "__main__":
-    logger.info(f"Script start time: {datetime.datetime.now()}")
+    logger.info(f"Starting Caddy Scrape")
     for config in scrap_configs:
         logger.info(f"Scraping {config['base_url']}")
         scraper = CaddyScraper(**config)
@@ -38,4 +38,4 @@ if __name__ == "__main__":
             delete_existing_index=False
         )
         asyncio.run(manager.run())
-    logger.info(f"Script finishing time: {datetime.datetime.now()}")
+    logger.info(f"Finished Caddy Scrape")

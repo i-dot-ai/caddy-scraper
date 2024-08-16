@@ -14,7 +14,7 @@ from langchain_community.vectorstores import OpenSearchVectorSearch
 from dotenv import load_dotenv
 
 load_dotenv()
-opensearch_https = os.environ.get("OPENSEARCH_HTTPS")
+opensearch_https = os.environ.get("OPENSEARCH_URL")
 # embedding_model_name = os.environ.get("HF_EMBEDDING_MODEL")
 bedrock_model_id = os.environ.get("BEDROCK_MODEL_ID")
 
@@ -28,7 +28,9 @@ auth_creds = AWS4Auth(
     refreshable_credentials=credentials,
 )
 
-embedding_model = BedrockEmbeddings(model_id = bedrock_model_id, region_name=region)
+embedding_model = BedrockEmbeddings(
+    model_id=bedrock_model_id, region_name=region)
+
 
 def generate_rolling_vectorstore_name():
     """Generates a name name for the index based on todays day
@@ -45,7 +47,7 @@ def generate_rolling_vectorstore_name():
     today = datetime.now().strftime("%Y%m%d")
     rolling_index_name = f"{name_suffix}_{today}"
 
-    # output the new name as print statement and debug log
+    # output the new name
     print(f"New index name: {rolling_index_name}")
     return rolling_index_name
 
