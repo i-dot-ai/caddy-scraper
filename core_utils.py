@@ -25,12 +25,24 @@ MEMORY = Memory(LOCATION, verbose=0)
 
 load_dotenv()  # take environment variables from .env.
 
-# Configure logging
-logging.basicConfig(
-    filename="debug.log",
-    level=logging.DEBUG,
-    format="%(asctime)s:%(levelname)s:%(message)s",
-)
+BLUE = "\033[34m"
+GREEN = "\033[32m"
+YELLOW = "\033[33m"
+CYAN = "\033[36m"
+RESET = "\033[0m"
+
+
+def setup_logger():
+    logging.basicConfig(
+        level=logging.INFO,
+        format=f"{BLUE}CADDY SCRAPER{RESET} | {GREEN}%(asctime)s{RESET} | {
+            YELLOW}%(levelname)s{RESET} | {CYAN}%(message)s{RESET}",
+        handlers=[logging.StreamHandler()]
+    )
+    return logging.getLogger(__name__)
+
+
+logger = setup_logger()
 
 
 def retry(num_retries=3, delay=1, backoff=2, exceptions=(Exception,)):
@@ -57,7 +69,8 @@ def retry(num_retries=3, delay=1, backoff=2, exceptions=(Exception,)):
                         raise
                     time.sleep(_delay)
                     _delay *= backoff
-                    print(f"Retrying {_num_retries} more times after exception: {e}")
+                    logger.warning(
+                        f"Retrying {_num_retries} more times after exception: {e}")
 
         return wrapper_retry
 
@@ -126,7 +139,8 @@ def crawl_url_batch(
 
         # page content
         current_page_markdown = html2text.html2text(str(main_section_html))
-        page_dict = {"source_url": current_url, "markdown": current_page_markdown}
+        page_dict = {"source_url": current_url,
+                     "markdown": current_page_markdown}
         scraped_pages.append(page_dict)
 
     document_df = pd.DataFrame(scraped_pages)
@@ -139,7 +153,8 @@ def crawl_url_batch(
     unique_pages["scraped_at"] = pd.to_datetime("today")
     unique_pages["updated_at"] = pd.to_datetime("today")
 
-    dataframe_loader = DataFrameLoader(unique_pages, page_content_column="markdown")
+    dataframe_loader = DataFrameLoader(
+        unique_pages, page_content_column="markdown")
 
     docs_to_upload = dataframe_loader.load()
 
@@ -158,7 +173,8 @@ def get_sitemap(url):
 
     response = requests.get(url)  # nosec
     response.raise_for_status()  # Ensure we get a valid response or raise an HTTPError
-    response.encoding = response.apparent_encoding  # Set the apparent encoding if not provided
+    # Set the apparent encoding if not provided
+    response.encoding = response.apparent_encoding
     xml = BeautifulSoup(response.content, "lxml-xml")
     return xml
 
@@ -263,7 +279,8 @@ def sitemap_to_dataframe(xml, name=None, verbose=False):
     for url in urls:
         loc = url.find("loc").text if url.find("loc") else ""
         domain = urlparse(loc).netloc if loc else ""
-        changefreq = url.find("changefreq").text if url.find("changefreq") else ""
+        changefreq = url.find("changefreq").text if url.find(
+            "changefreq") else ""
         priority = url.find("priority").text if url.find("priority") else ""
         sitemap_name = name if name else ""
 
@@ -276,7 +293,7 @@ def sitemap_to_dataframe(xml, name=None, verbose=False):
         }
 
         if verbose:
-            print(row)
+            logger.debug(row)
 
         data.append(row)
 
@@ -284,7 +301,6 @@ def sitemap_to_dataframe(xml, name=None, verbose=False):
     df = pd.DataFrame(data)
 
     return df
-
 
 
 def get_all_urls(url, domains_to_exclude=None):
@@ -311,29 +327,31 @@ def get_all_urls(url, domains_to_exclude=None):
 
         for sitemap in sitemaps:
             try:
-                print("Processing sitemap: ", sitemap)
+                logger.info(f"Processing sitemap: {sitemap}")
                 sitemap_xml = get_sitemap(sitemap)
                 df_sitemap = sitemap_to_dataframe(sitemap_xml, name=sitemap)
-                print("Sitemap processed: ", sitemap)
+                logger.info(f"Sitemap processed: {sitemap}")
                 df = pd.DataFrame(
-                    columns=["loc", "changefreq", "priority", "domain", "sitemap_name"]
+                    columns=["loc", "changefreq",
+                             "priority", "domain", "sitemap_name"]
                 )
                 # remove any rows which contain any of the excluded domains
                 if domains_to_exclude:
                     df_sitemap = df_sitemap[
-                        ~df_sitemap["loc"].str.contains("|".join(domains_to_exclude))
+                        ~df_sitemap["loc"].str.contains(
+                            "|".join(domains_to_exclude))
                     ]
 
                 df = pd.concat([df, df_sitemap], ignore_index=True)
                 list_of_dfs.append(df)
 
             except Exception as e:
-                print(f"Error processing sitemap {sitemap}: {e}")
+                logger.error(f"Error processing sitemap {sitemap}: {e}")
 
         return list_of_dfs
 
     except Exception as e:
-        print(f"Error initializing sitemap processing for {url}: {e}")
+        logger.error(f"Error initializing sitemap processing for {url}: {e}")
         return []
 
 
@@ -360,7 +378,8 @@ def extract_urls(base_url, text):
     urls = pattern.findall(text)
 
     # if any urls start with a /, add the base_url
-    urls = [urljoin(base_url, url) if url.startswith("/") else url for url in urls]
+    urls = [urljoin(base_url, url) if url.startswith("/")
+            else url for url in urls]
 
     # Remove any urls that don't start with http
     urls = [url for url in urls if url.startswith("http")]
@@ -463,7 +482,8 @@ def scrape_url_list(base_url, url_list, authentication_cookie=None):
                 main_section_html = soup
 
         # get links on main section of page
-        extracted_links = bs_transformer.extract_tags(str(main_section_html), ["a"])
+        extracted_links = bs_transformer.extract_tags(
+            str(main_section_html), ["a"])
 
         # run extract_url on each url
         current_page_links = extract_urls(current_url, extracted_links)
@@ -483,7 +503,8 @@ def scrape_url_list(base_url, url_list, authentication_cookie=None):
 
         # page content
         current_page_markdown = html2text.html2text(str(main_section_html))
-        page_dict = {"source_url": current_url, "markdown": current_page_markdown}
+        page_dict = {"source_url": current_url,
+                     "markdown": current_page_markdown}
         pages.append(page_dict)
 
     # Create a dataframe with page sources & contents
@@ -493,7 +514,7 @@ def scrape_url_list(base_url, url_list, authentication_cookie=None):
         drop=True
     )
 
-    print(f"Number of pages scraped: {len(pages)}")
+    logger.info(f"Number of pages scraped: {len(pages)}")
 
     return unique_pages, links
 
@@ -532,10 +553,12 @@ def delete_duplicate_urls_from_store(vectorstore):
             "sort": [
                 {"metadata.scraped_at": {"order": "desc"}}  # Sort by time_scraped
             ],
-            "_source": ["_id", "metadata.scraped_at"],  # Retrieve ID and time_scraped
+            # Retrieve ID and time_scraped
+            "_source": ["_id", "metadata.scraped_at"],
         }
 
-        search_result = vectorstore.client.search(index=index_name, body=search_query)
+        search_result = vectorstore.client.search(
+            index=index_name, body=search_query)
         doc_ids = [hit["_id"] for hit in search_result["hits"]["hits"]]
 
         # Keep the first ID (most recent) and mark the rest for deletion
@@ -545,7 +568,7 @@ def delete_duplicate_urls_from_store(vectorstore):
     for doc_id in delete_candidates:
         vectorstore.client.delete(index=index_name, id=doc_id)
 
-    print(f"Deleted {len(delete_candidates)} duplicate documents")
+    logger.info(f"Deleted {len(delete_candidates)} duplicate documents")
 
     def fetch_entries_to_dataframe(opensearch_client, index_name):
         """
@@ -593,7 +616,8 @@ def delete_duplicate_urls_from_store(vectorstore):
                 pbar.update(len(page["hits"]["hits"]))
 
                 # Fetch the next page of results
-                page = opensearch_client.scroll(scroll_id=scroll_id, scroll="2m")
+                page = opensearch_client.scroll(
+                    scroll_id=scroll_id, scroll="2m")
 
                 if not page["hits"]["hits"]:
                     break
@@ -660,10 +684,11 @@ def delete_duplicate_urls_from_store(vectorstore):
 
         ids_to_delete = excluded_entries["ID"].tolist()
 
-        deleted_docs = bulk_delete_by_ids(vectorstore.client, index_name, ids_to_delete)
+        deleted_docs = bulk_delete_by_ids(
+            vectorstore.client, index_name, ids_to_delete)
 
         num_deleted_domains = len(deleted_docs)
-        print(f"Total number of deleted domains: {num_deleted_domains}")
+        logger.info(f"Total number of deleted domains: {num_deleted_domains}")
 
         return deleted_docs
 

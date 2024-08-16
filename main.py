@@ -1,12 +1,12 @@
 import json
 from scraper_registry import scraper_registry
 import os
+from core_utils import logger
 
 
 def load_scrape_configs(file_path: str):
     with open(file_path, "r") as file:
-        # print working dir
-        print(os.getcwd())
+        logger.debug(f"{os.getcwd()}")
         return json.load(file)
 
 
@@ -22,7 +22,7 @@ def execute_scraper(config):
             **scrape_args,
         )
     else:
-        print(f"No scraper function found for method: {scrape_method}")
+        logger.error(f"No scraper function found for method: {scrape_method}")
 
 
 def main():
