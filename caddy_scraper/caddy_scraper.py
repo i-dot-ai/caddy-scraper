@@ -1,26 +1,26 @@
-""""Caddy scraper module."""
+""" "Caddy scraper module."""
 
 import json
 import os
 import re
 from typing import Dict, List, Optional
 
-from bs4 import BeautifulSoup
 import html2text
-from langchain_community.document_loaders import AsyncHtmlLoader
-from langchain_community.document_transformers import BeautifulSoupTransformer
 import pandas as pd
 import requests
+from bs4 import BeautifulSoup
+from langchain_community.document_loaders import AsyncHtmlLoader
+from langchain_community.document_transformers import BeautifulSoupTransformer
 from tqdm import tqdm
 
 from core_utils import (
-    extract_urls,
     check_if_link_in_base_domain,
+    extract_urls,
     get_all_urls,
+    logger,
     remove_anchor_urls,
     remove_markdown_index_links,
     retry,
-    logger
 )
 
 
@@ -128,10 +128,11 @@ class CaddyScraper:
         """
         bs_transformer = BeautifulSoupTransformer()
         if "advisernet" in self.base_url:
-            cookie_dict = {"Cookie": f".CitizensAdviceLogin={os.getenv(
-                "ADVISOR_NET_AUTHENTICATION")}"}
-            loader = AsyncHtmlLoader(
-                self.base_url, header_template=cookie_dict)
+            cookie_dict = {
+                "Cookie": f".CitizensAdviceLogin={os.getenv(
+                "ADVISOR_NET_AUTHENTICATION")}"
+            }
+            loader = AsyncHtmlLoader(self.base_url, header_template=cookie_dict)
         else:
             loader = AsyncHtmlLoader(self.base_url)
         docs = loader.load()
@@ -149,8 +150,7 @@ class CaddyScraper:
             for page in tqdm(all_pages):
                 current_url = page.metadata["source"]
                 page_html = BeautifulSoup(page.page_content, features="lxml")
-                extracted_links = bs_transformer.extract_tags(
-                    str(page_html), ["a"])
+                extracted_links = bs_transformer.extract_tags(str(page_html), ["a"])
                 current_page_links = extract_urls(current_url, extracted_links)
                 current_page_links = [
                     link
@@ -161,8 +161,7 @@ class CaddyScraper:
                 links = self.remove_excluded_domains(links)
                 links = remove_anchor_urls(list(set(links)))
                 if cookie_dict:
-                    loader = AsyncHtmlLoader(
-                        links, header_template=cookie_dict)
+                    loader = AsyncHtmlLoader(links, header_template=cookie_dict)
                 else:
                     loader = AsyncHtmlLoader(links)
         return remove_anchor_urls(links)
@@ -204,7 +203,7 @@ class CaddyScraper:
             List[Dict[str, str]]: List of dicts containing scraped data from urls.
         """
         url_batches = [
-            urls[i: i + self.batch_size] for i in range(0, len(urls), self.batch_size)
+            urls[i : i + self.batch_size] for i in range(0, len(urls), self.batch_size)
         ]
         for ind, url_batch in enumerate(url_batches):
             if self.downloading_method == "scrape":
@@ -224,8 +223,10 @@ class CaddyScraper:
             List[Dict[str, str]]: List of dicts containing scraped data from urls.
         """
         if "advisernet" in self.base_url:
-            cookie_dict = {"Cookie": f".CitizensAdviceLogin={os.getenv(
-                "ADVISOR_NET_AUTHENTICATION")}"}
+            cookie_dict = {
+                "Cookie": f".CitizensAdviceLogin={os.getenv(
+                "ADVISOR_NET_AUTHENTICATION")}"
+            }
             loader = AsyncHtmlLoader(url_list, cookie_dict)
         else:
             loader = AsyncHtmlLoader(url_list)
@@ -241,8 +242,7 @@ class CaddyScraper:
             else:
                 main_section_html = soup
             if len(main_section_html) > 0:
-                current_page_markdown = html2text.html2text(
-                    str(main_section_html))
+                current_page_markdown = html2text.html2text(str(main_section_html))
                 current_page_markdown = remove_markdown_index_links(
                     current_page_markdown
                 )
@@ -273,13 +273,11 @@ class CaddyScraper:
             List[Dict[str, str]]: list of dictionaries containing page content and metadata.
         """
         if "gov.uk" not in self.base_url:
-            raise ValueError(
-                "Can only use gov.uk API to scrape government urls.")
+            raise ValueError("Can only use gov.uk API to scrape government urls.")
         pages = []
         for url in url_list:
             if url.startswith(self.base_url):
-                api_call = url.replace(
-                    self.base_url, "https://www.gov.uk/api/content/")
+                api_call = url.replace(self.base_url, "https://www.gov.uk/api/content/")
             else:
                 raise ValueError("Non gov.uk url passed to api.")
             response = requests.get(api_call, timeout=100)
@@ -292,8 +290,7 @@ class CaddyScraper:
                 parts = details.get("parts", [])
                 json_body = "".join(part.get("body", "") for part in parts)
             if len(json_body) > min_body_length:
-                linked_urls = re.findall(
-                    r"(?P<url>https?://[^\s]+)", json_body)
+                linked_urls = re.findall(r"(?P<url>https?://[^\s]+)", json_body)
                 if len(linked_urls) > 0:
                     linked_urls = [u[:-1] for u in set(linked_urls)]
                 pages.append(
