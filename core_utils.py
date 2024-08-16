@@ -1,24 +1,21 @@
+import functools
 import json
 import logging
-import pandas as pd
-from tqdm.auto import tqdm
 import re
-import requests
+import time
+from typing import List
 from urllib.parse import urljoin, urlparse
 
-from typing import List
-
 import html2text
+import pandas as pd
+import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from joblib import Memory
 from langchain_community.document_loaders import AsyncHtmlLoader, DataFrameLoader
 from langchain_community.document_transformers import BeautifulSoupTransformer
-from generate_vectorstore import vectorstore
 from opensearchpy import helpers
-import time
-import functools
-
+from tqdm.auto import tqdm
 
 LOCATION = "./cachedir"
 MEMORY = Memory(LOCATION, verbose=0)
