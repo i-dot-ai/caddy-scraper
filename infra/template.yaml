@@ -73,7 +73,7 @@ Resources:
     Properties:
       ClusterName: !Sub caddy-scraper-cluster-${StageName}
 
-  CaddyService:
+  CaddyScraperService:
     Type: AWS::ECS::Service
     Properties:
       Cluster: !Ref CaddyScraperCluster
@@ -88,7 +88,6 @@ Resources:
             - !Ref CaddyScraperSecurityGroup
           Subnets:
             - !Ref CaddyPrivateSubnetId
-      HealthCheckGracePeriodSeconds: 30
       
   CaddyScraperLogGroup:
     Type: AWS::Logs::LogGroup
