@@ -1,0 +1,213 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: |
+  Caddy Scraper - AWS Cloudformation Template
+
+Parameters:
+  StageName:
+    Type: String
+    Description: Name of the stage (e.g., dev, prod)
+    AllowedValues:
+      - dev
+      - prod
+  CaddyScraperImage:
+    Type: String
+    Description: Caddy scraper container image
+  OpensearchUrl:
+    Type: String
+    Description: Url for Opensearch
+  OpensearchIndex:
+    Type: String
+    Description: Index for Opensearch
+  AdvisernetSecretArn:
+    Type: String
+    Description: Advisernet secret ARN
+  CaddyPrivateSubnetId:
+    Type: String
+    Description: Private subnet ID
+  CaddyVpcId:
+    Type: String
+    Description: Vpc ID
+
+Resources:
+  CaddyScraperSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub caddy-scraper-sg-${StageName}
+      GroupDescription: Security group for Caddy ECS Fargate
+      VpcId: !Ref CaddyVPC
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+  CaddyScraperTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub caddy-scraper-task-${StageName}
+      ExecutionRoleArn: !GetAtt CaddyScraperRole.Arn
+      TaskRoleArn: !GetAtt CaddyScraperRole.Arn
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: 4096
+      Memory: 8192
+      ContainerDefinitions:
+        - Name: caddy-scraper-container
+          Image: !Ref CaddyScraperImage
+          Secrets:
+            - Name: ADVISOR_NET_AUTHENTICATION
+              ValueFrom: !Ref AdvisernetSecretArn
+          Environment:
+            - Name: OPENSEARCH_HTTPS
+              Value: !Ref OpensearchUrl
+            - Name: OPENSEARCH_INDEX
+              Value: !Ref OpensearchIndex
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref CaddyScraperLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: caddy-scraper-container
+
+  CaddyScraperCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub caddy-scraper-cluster-${StageName}
+
+  CaddyService:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref CaddyScraperCluster
+      ServiceName: !Sub caddy-scraper-${StageName}
+      TaskDefinition: !Ref CaddyScraperTaskDefinition
+      DesiredCount: 1
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          SecurityGroups:
+            - !Ref CaddyScraperSecurityGroup
+          Subnets:
+            - !Ref CaddyPrivateSubnet1
+      HealthCheckGracePeriodSeconds: 30
+      
+  CaddyScraperLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /ecs/caddy-scraper-${StageName}
+      RetentionInDays: 7
+
+  CaddyScraperRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub CaddyScraperRole-${StageName}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: !Sub CaddyScraperECRPolicy-${StageName}
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                Resource: '*'
+        - PolicyName: !Sub CaddyScraperLoggingPolicy-${StageName}
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+        - PolicyName: !Sub ScraperBedrockInvoker-${StageName}
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                Resource: '*'
+        - PolicyName: !Sub CaddyScraperSecrets-${StageName}
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: '*'
+        - PolicyName: !Sub CaddyScraperAOSS-${StageName}
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - aoss:APIAccessAll
+                Resource: '*'
+
+  ScraperEventRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: !Sub "scraper-event-role-${Stage}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "events.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Policies:
+        - PolicyName: !Sub scraper-ECSTaskExecutionPolicy-${Stage}
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecs:RunTask
+                Resource: !Ref CaddyScraperTaskDefinition
+        - PolicyName: !Sub scraper-ECSTaskExecutionIamPolicy-${Stage}
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource: "*"
+      Path: "/"
+    DependsOn:
+      - CaddyScraperTaskDefinition
+
+  ScraperScheduleRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: "Schedule for Caddy Scraper"
+      Name: !Sub scraper-task-schedule-rule-${Stage}
+      State: ENABLED
+      ScheduleExpression: cron(0 6 ? * MON *)
+      Targets:
+        - Arn: !GetAtt CaddyScraperCluster.Arn
+          Id: ScheduledTask
+          RoleArn: !GetAtt ScraperEventRole.Arn
+          EcsParameters:
+            TaskDefinitionArn: !Ref CaddyScraperTaskDefinition
+            LaunchType: FARGATE
+            NetworkConfiguration:
+              AwsVpcConfiguration:
+                AssignPublicIp: DISABLED
+                SecurityGroups:
+                  - !Ref CaddyScraperSecurityGroup
+                Subnets:
+                  - !Ref CaddyPrivateSubnetId
