@@ -34,7 +34,7 @@ Resources:
     Properties:
       GroupName: !Sub caddy-scraper-sg-${StageName}
       GroupDescription: Security group for Caddy ECS Fargate
-      VpcId: !Ref CaddyVPC
+      VpcId: !Ref CaddyVpcId
       SecurityGroupEgress:
         - IpProtocol: -1
           CidrIp: 0.0.0.0/0
@@ -87,7 +87,7 @@ Resources:
           SecurityGroups:
             - !Ref CaddyScraperSecurityGroup
           Subnets:
-            - !Ref CaddyPrivateSubnet1
+            - !Ref CaddyPrivateSubnetId
       HealthCheckGracePeriodSeconds: 30
       
   CaddyScraperLogGroup:
@@ -159,7 +159,7 @@ Resources:
   ScraperEventRole:
     Type: "AWS::IAM::Role"
     Properties:
-      RoleName: !Sub "scraper-event-role-${Stage}"
+      RoleName: !Sub "scraper-event-role-${StageName}"
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -170,7 +170,7 @@ Resources:
             Action:
               - "sts:AssumeRole"
       Policies:
-        - PolicyName: !Sub scraper-ECSTaskExecutionPolicy-${Stage}
+        - PolicyName: !Sub scraper-ECSTaskExecutionPolicy-${StageName}
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -178,7 +178,7 @@ Resources:
                 Action:
                   - ecs:RunTask
                 Resource: !Ref CaddyScraperTaskDefinition
-        - PolicyName: !Sub scraper-ECSTaskExecutionIamPolicy-${Stage}
+        - PolicyName: !Sub scraper-ECSTaskExecutionIamPolicy-${StageName}
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -194,7 +194,7 @@ Resources:
     Type: AWS::Events::Rule
     Properties:
       Description: "Schedule for Caddy Scraper"
-      Name: !Sub scraper-task-schedule-rule-${Stage}
+      Name: !Sub scraper-task-schedule-rule-${StageName}
       State: ENABLED
       ScheduleExpression: cron(0 6 ? * MON *)
       Targets:
