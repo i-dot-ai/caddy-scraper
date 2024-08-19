@@ -2,6 +2,9 @@
 	"name": "Caddy Scraper - Python 3",
 	"image": "mcr.microsoft.com/devcontainers/python:3.12-bullseye",
 	"features": {
+		"ghcr.io/devcontainers/features/aws-cli:1": {},
+		"ghcr.io/devcontainers-contrib/features/pre-commit:2": {},
+		"ghcr.io/devcontainers/features/docker-in-docker:2": {}
 	},
 	"postCreateCommand": "",
 	"runArgs": [

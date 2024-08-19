@@ -48,12 +48,20 @@ class VectorStoreManager:
         self.text_splitter = self.get_text_splitter()
 
     async def run(self):
-        """Run VectorStoreManager, loading documents and uploading them to vectorstore."""
+        """
+        Run VectorStoreManager, loading documents and uploading them to vectorstore.
+        """
         for file in tqdm(os.listdir(self.scrape_output_path)):
-            logger.info(f"Uploading {file}")
+            logger.info(f"Processing {file}")
             path = os.path.join(self.scrape_output_path, file)
-            docs = self.load_documents(path)
-            await self.add_documents_to_vectorstore(docs)
+            try:
+                docs = self.load_documents(path)
+                await self.add_documents_to_vectorstore(docs)
+                logger.info(f"Successfully processed and uploaded {file}")
+            except Exception as e:
+                logger.error(f"Error processing {file}: {str(e)}")
+                with open(path, 'r') as f:
+                    logger.debug(f"Contents of {file}:\n{f.read()}")
 
     def get_embedding_model(self, embedding_model: str) -> embeddings.Embeddings:
         """Get an embedding model for the vectorstore.
@@ -132,7 +140,13 @@ class VectorStoreManager:
         """
         with open(file_path) as f:
             df = pd.DataFrame(json.load(f))
-        df["raw_markdown"] = df["markdown"]
+
+        try:
+            df["raw_markdown"] = df["markdown"]
+        except:
+            raise ValueError(f"Markdown column not found in the JSON file. Available columns: {
+                df.columns.tolist()}")
+
         loader = DataFrameLoader(df, page_content_column="markdown")
         docs = loader.load()
         logger.info(f"Loaded {len(docs)} documents from {file_path}")

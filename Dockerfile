@@ -9,4 +9,6 @@ COPY excluded_domains.json ./caddy_scraper/excluded_domains.json
 
 WORKDIR caddy_scraper
 
+RUN mkdir -p citizensadvice_scrape advisernet_scrape govuk_scrape
+
 ENTRYPOINT ["python", "run_scrape.py"]

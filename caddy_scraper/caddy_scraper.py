@@ -3,7 +3,8 @@
 import json
 import os
 import re
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
+from ratelimit import limits, sleep_and_retry
 
 import html2text
 import pandas as pd
@@ -130,9 +131,10 @@ class CaddyScraper:
         if "advisernet" in self.base_url:
             cookie_dict = {
                 "Cookie": f".CitizensAdviceLogin={os.getenv(
-                "ADVISOR_NET_AUTHENTICATION")}"
+                    "ADVISOR_NET_AUTHENTICATION")}"
             }
-            loader = AsyncHtmlLoader(self.base_url, header_template=cookie_dict)
+            loader = AsyncHtmlLoader(
+                self.base_url, header_template=cookie_dict)
         else:
             loader = AsyncHtmlLoader(self.base_url)
         docs = loader.load()
@@ -150,7 +152,8 @@ class CaddyScraper:
             for page in tqdm(all_pages):
                 current_url = page.metadata["source"]
                 page_html = BeautifulSoup(page.page_content, features="lxml")
-                extracted_links = bs_transformer.extract_tags(str(page_html), ["a"])
+                extracted_links = bs_transformer.extract_tags(
+                    str(page_html), ["a"])
                 current_page_links = extract_urls(current_url, extracted_links)
                 current_page_links = [
                     link
@@ -161,7 +164,8 @@ class CaddyScraper:
                 links = self.remove_excluded_domains(links)
                 links = remove_anchor_urls(list(set(links)))
                 if cookie_dict:
-                    loader = AsyncHtmlLoader(links, header_template=cookie_dict)
+                    loader = AsyncHtmlLoader(
+                        links, header_template=cookie_dict)
                 else:
                     loader = AsyncHtmlLoader(links)
         return remove_anchor_urls(links)
@@ -203,7 +207,7 @@ class CaddyScraper:
             List[Dict[str, str]]: List of dicts containing scraped data from urls.
         """
         url_batches = [
-            urls[i : i + self.batch_size] for i in range(0, len(urls), self.batch_size)
+            urls[i: i + self.batch_size] for i in range(0, len(urls), self.batch_size)
         ]
         for ind, url_batch in enumerate(url_batches):
             if self.downloading_method == "scrape":
@@ -225,7 +229,7 @@ class CaddyScraper:
         if "advisernet" in self.base_url:
             cookie_dict = {
                 "Cookie": f".CitizensAdviceLogin={os.getenv(
-                "ADVISOR_NET_AUTHENTICATION")}"
+                    "ADVISOR_NET_AUTHENTICATION")}"
             }
             loader = AsyncHtmlLoader(url_list, cookie_dict)
         else:
@@ -242,7 +246,8 @@ class CaddyScraper:
             else:
                 main_section_html = soup
             if len(main_section_html) > 0:
-                current_page_markdown = html2text.html2text(str(main_section_html))
+                current_page_markdown = html2text.html2text(
+                    str(main_section_html))
                 current_page_markdown = remove_markdown_index_links(
                     current_page_markdown
                 )
@@ -254,53 +259,89 @@ class CaddyScraper:
                 scraped_pages.append(page_dict)
         return scraped_pages
 
-    @retry()
-    def download_batch_from_govuk_api(
-        self, url_list: List[str], min_body_length: int = 50
-    ) -> List[Dict[str, str]]:
-        """Use the gov.uk api to download url content.
+    @sleep_and_retry
+    @limits(calls=10, period=1)
+    def download_single_url(self, url: str, base_url: str, min_body_length: int) -> Optional[Dict[str, Any]]:
+        """
+        Download and process content from a single URL using the gov.uk API.
+
+        This method is rate-limited to 10 calls per second for the GOV UK Content API.
 
         Args:
-            url_list (List[str]): list of urls to download.
-            min_body_length (int): min body length for storage. Defaults to 10.
-
-        Raises:
-            ValueError: will be raised if gov.uk url is not the base_url.
-            ValueError: will be raised if non gov.uk url is passed to the api.
-            requests.exceptions.HTTPError: will be raised if api call fails.
+            url (str): The URL to download content from.
+            base_url (str): The base URL of the gov.uk website.
+            min_body_length (int): The minimum required length for the body content.
 
         Returns:
-            List[Dict[str, str]]: list of dictionaries containing page content and metadata.
+            Optional[Dict[str, Any]]: A dictionary containing the processed content and metadata,
+                                    or None if the URL couldn't be processed.
+
+        Raises:
+            ValueError: If the base_url is not a gov.uk URL.
         """
-        if "gov.uk" not in self.base_url:
-            raise ValueError("Can only use gov.uk API to scrape government urls.")
-        pages = []
-        for url in url_list:
-            if url.startswith(self.base_url):
-                api_call = url.replace(self.base_url, "https://www.gov.uk/api/content/")
-            else:
-                raise ValueError("Non gov.uk url passed to api.")
+        if "gov.uk" not in base_url:
+            raise ValueError(
+                "Can only use gov.uk API to scrape government urls.")
+
+        if url.startswith(base_url):
+            api_call = url.replace(base_url, "https://www.gov.uk/api/content/")
+        else:
+            logger.warning(f"Skipping non gov.uk url: {url}")
+            return None
+
+        try:
             response = requests.get(api_call, timeout=100)
-            if response.status_code != 200:
-                raise requests.exceptions.HTTPError
+            response.raise_for_status()
+
             response_json = response.json()
             details = response_json.get("details", {})
             json_body = details.get("body")
             if json_body is None:
                 parts = details.get("parts", [])
                 json_body = "".join(part.get("body", "") for part in parts)
+
             if len(json_body) > min_body_length:
-                linked_urls = re.findall(r"(?P<url>https?://[^\s]+)", json_body)
+                linked_urls = re.findall(
+                    r"(?P<url>https?://[^\s]+)", json_body)
                 if len(linked_urls) > 0:
                     linked_urls = [u[:-1] for u in set(linked_urls)]
-                pages.append(
-                    {
-                        "source_url": url,
-                        "markdown": json_body,
-                        "markdown_length": len(json_body),
-                        "linked_urls": linked_urls,
-                    }
-                )
+                return {
+                    "source_url": url,
+                    "markdown": json_body,
+                    "markdown_length": len(json_body),
+                    "linked_urls": linked_urls,
+                }
+            else:
+                logger.warning(
+                    f"Skipping {url} due to insufficient body length")
+                return None
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error processing {url}: {str(e)}")
+            return None
+
+    def download_batch_from_govuk_api(self, url_list: List[str], min_body_length: int = 50) -> List[Dict[str, str]]:
+        """
+        Download and process content from a batch of URLs using the gov.uk API.
+
+        This method iterates through the provided list of URLs, downloading and processing
+        the content for each. It includes error handling and rate limiting management.
+
+        Args:
+            url_list (List[str]): A list of URLs to process.
+            min_body_length (int, optional): The minimum required length for the body content. 
+                                            Defaults to 50.
+
+        Returns:
+            List[Dict[str, str]]: A list of dictionaries, each containing the processed 
+                                content and metadata for a successfully downloaded URL.
+        """
+        pages = []
+        for url in tqdm(url_list, desc="Downloading gov.uk URLs"):
+            result = self.download_single_url(
+                url, self.base_url, min_body_length)
+            if result:
+                pages.append(result)
         return pages
 
     def save_results(

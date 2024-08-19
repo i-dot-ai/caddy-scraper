@@ -11,3 +11,5 @@ lxml
 requests-aws4auth
 pre-commit
 fake_useragent
+ratelimit
+tqdm

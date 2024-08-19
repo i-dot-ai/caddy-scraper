@@ -57,9 +57,9 @@ Resources:
             - Name: ADVISOR_NET_AUTHENTICATION
               ValueFrom: !Ref AdvisernetSecretArn
           Environment:
-            - Name: OPENSEARCH_HTTPS
+            - Name: OPENSEARCH_URL
               Value: !Ref OpensearchUrl
-            - Name: OPENSEARCH_INDEX
+            - Name: OPENSEARCH_INDEX_SUFFIX
               Value: !Ref OpensearchIndex
           LogConfiguration:
             LogDriver: awslogs

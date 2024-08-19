@@ -1,0 +1,10 @@
+services:
+ caddyscraper:
+   build:
+     context: .
+     dockerfile: ./Dockerfile
+   container_name: caddy_scraper
+   volumes:
+    - ~/.aws/:/root/.aws:ro
+   env_file:
+    - .env
