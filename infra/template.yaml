@@ -79,7 +79,7 @@ Resources:
       Cluster: !Ref CaddyScraperCluster
       ServiceName: !Sub caddy-scraper-${StageName}
       TaskDefinition: !Ref CaddyScraperTaskDefinition
-      DesiredCount: 1
+      DesiredCount: 0
       LaunchType: FARGATE
       NetworkConfiguration:
         AwsvpcConfiguration:

@@ -10,3 +10,4 @@ python-dotenv
 lxml
 requests-aws4auth
 pre-commit
+fake_useragent
