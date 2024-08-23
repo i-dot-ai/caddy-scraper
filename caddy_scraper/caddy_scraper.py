@@ -128,6 +128,7 @@ class CaddyScraper:
             links (List[str]): a list of links found on the pages.
         """
         bs_transformer = BeautifulSoupTransformer()
+        cookie_dict = None
         if "advisernet" in self.base_url:
             cookie_dict = {
                 "Cookie": f".CitizensAdviceLogin={os.getenv(

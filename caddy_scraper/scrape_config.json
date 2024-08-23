@@ -2,14 +2,15 @@
     {
         "base_url": "https://www.citizensadvice.org.uk/", 
         "sitemap_url": "https://www.citizensadvice.org.uk/sitemap.xml", 
-        "crawling_method": "sitemap", 
+        "crawling_method": "brute", 
+        "scrape_depth": 4,
         "output_dir": "citizensadvice_scrape"
     }, 
     {
         "base_url": "https://www.citizensadvice.org.uk/advisernet", 
-        "crawling_method": "brute", 
-        "output_dir": "advisernet_scrape", 
-        "scrape_depth": 4
+        "crawling_method": "brute",  
+        "scrape_depth": 4,
+        "output_dir": "advisernet_scrape"
     }, 
     {
         "base_url": "https://www.gov.uk/", 
