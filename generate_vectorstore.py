@@ -28,8 +28,7 @@ auth_creds = AWS4Auth(
     refreshable_credentials=credentials,
 )
 
-embedding_model = BedrockEmbeddings(
-    model_id=bedrock_model_id, region_name=region)
+embedding_model = BedrockEmbeddings(model_id=bedrock_model_id, region_name=region)
 
 
 def generate_rolling_vectorstore_name():

@@ -1,4 +1,5 @@
 """Script to pull and upload caddy data."""
+
 import asyncio
 import datetime
 import json
@@ -27,14 +28,18 @@ if __name__ == "__main__":
         logger.info(f"Scraping {config['base_url']}")
         scraper = CaddyScraper(**config)
         scraper.run()
-        logger.info(f"Scrape completed for {
-                    config['base_url']}. Output directory: {scraper.output_dir}")
+        logger.info(
+            f"Scrape completed for {
+                config['base_url']}. Output directory: {scraper.output_dir}"
+        )
         if not os.path.exists(scraper.output_dir):
-            logger.warning(f"Output directory {
-                           scraper.output_dir} does not exist after scraping. Creating...")
+            logger.warning(
+                f"Output directory {
+                    scraper.output_dir} does not exist after scraping. Creating..."
+            )
             os.makedirs(scraper.output_dir)
 
-    for scrape_dir in ['citizensadvice_scrape', 'advisernet_scrape', "govuk_scrape"]:
+    for scrape_dir in ["citizensadvice_scrape", "advisernet_scrape", "govuk_scrape"]:
         logger.info(f"Uploading {scrape_dir}")
         if not os.path.exists(scrape_dir):
             logger.error(
@@ -45,7 +50,7 @@ if __name__ == "__main__":
             scrape_output_path=scrape_dir,
             opensearch_url=os.getenv("OPENSEARCH_URL"),
             authentication_creds=auth_creds,
-            delete_existing_index=False
+            delete_existing_index=False,
         )
-        asyncio.run(manager.run())
+        manager.run_with_index()
     logger.info(f"Finished Caddy Scrape")

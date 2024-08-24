@@ -1,10 +1,12 @@
-""" "Caddy scraper module."""
+"""Caddy scraper module."""
 
+import asyncio
 import json
 import os
 import re
 from typing import Dict, List, Optional, Any
 from ratelimit import limits, sleep_and_retry
+from urllib.parse import urljoin
 
 import html2text
 import pandas as pd
@@ -13,6 +15,7 @@ from bs4 import BeautifulSoup
 from langchain_community.document_loaders import AsyncHtmlLoader
 from langchain_community.document_transformers import BeautifulSoupTransformer
 from tqdm import tqdm
+from aiohttp import ClientError, TooManyRedirects
 
 from core_utils import (
     check_if_link_in_base_domain,
@@ -22,6 +25,7 @@ from core_utils import (
     remove_anchor_urls,
     remove_markdown_index_links,
     retry,
+    clean_urls,
 )
 
 
@@ -63,12 +67,14 @@ class CaddyScraper:
         self.batch_size = batch_size
         self.output_dir = output_dir
         self.excluded_domains = self.get_excluded_domains()
+        self.problematic_urls = set()
+        self.bs_transformer = BeautifulSoupTransformer()
 
     def run(self):
-        """Run the caddy scrapper, fetching relevant urls then downloading and saving their scraped content."""
+        """Run the caddy scraper, fetching relevant urls then downloading and saving their scraped content."""
         urls = self.fetch_urls()
         logger.info(f"{len(urls)} urls fetched")
-        self.download_urls(urls)
+        asyncio.run(self.download_urls(urls))
 
     def get_excluded_domains(self) -> List[str]:
         """Returns the list of excluded domains from the json file as a list
@@ -111,15 +117,94 @@ class CaddyScraper:
                 raise ValueError(
                     "Valid int must be passed as scrape depth for brute crawling method."
                 )
-            return self.recursive_crawler()
+            urls = self.recursive_crawler()
         elif self.crawling_method == "sitemap":
             if not isinstance(self.sitemap_url, str):
                 raise ValueError(
                     "Valid string must be passed as sitemap_url for sitemap crawling method."
                 )
-            return self.fetch_urls_from_sitemap()
+            urls = self.fetch_urls_from_sitemap()
         else:
-            return []
+            urls = []
+
+        return clean_urls(urls)
+
+    async def fetch_pages(self, urls):
+        """
+        Asynchronously fetch multiple pages in batches, handling errors for individual URLs.
+
+        This method attempts to fetch URLs in batches. If a fetch fails,
+        the URL is added to the problematic_urls set and the error is logged.
+
+        Args:
+            urls (List[str]): A list of URLs to fetch.
+
+        Returns:
+            List[Document]: A list of successfully fetched pages as Document objects.
+        """
+        results = []
+        authentication_cookie = self.get_authentication_cookie()
+        header_template = (
+            {"Cookie": authentication_cookie} if authentication_cookie else None
+        )
+
+        for i in range(0, len(urls), self.batch_size):
+            batch_urls = urls[i:i+self.batch_size]
+            loader = AsyncHtmlLoader(
+                batch_urls, header_template=header_template)
+
+            try:
+                batch_pages = await loader.aload()
+                for url, page in zip(batch_urls, batch_pages):
+                    if page:
+                        results.append(page)
+                    else:
+                        logger.warning(f"Failed to fetch {url}")
+                        self.problematic_urls.add(url)
+            except Exception as e:
+                logger.error(f"Error in batch fetching: {str(e)}")
+                for url in batch_urls:
+                    try:
+                        page = await self.fetch_single_page(url, header_template)
+                        if page:
+                            results.append(page)
+                    except Exception as e:
+                        logger.error(f"Error fetching {url}: {str(e)}")
+                        self.problematic_urls.add(url)
+
+        return results
+
+    @retry()
+    async def fetch_single_page(self, url, header_template):
+        """
+        Asynchronously fetch a single page using AsyncHtmlLoader.
+
+        This method attempts to fetch a single URL using AsyncHtmlLoader. It includes
+        a retry mechanism for handling ClientError and TooManyRedirects exceptions.
+
+        Args:
+            url (str): The URL of the page to fetch.
+            header_template (dict): Headers to use for the request, including authentication if needed.
+
+        Returns:
+            Optional[Document]: The fetched page as a Document object if successful, None otherwise.
+
+        Raises:
+            ClientError: If there's a client-related error during fetching after all retries.
+            TooManyRedirects: If there are too many redirects during fetching after all retries.
+        """
+        try:
+            loader = AsyncHtmlLoader([url], header_template=header_template)
+            pages = await loader.aload()
+            return pages[0] if pages else None
+        except (ClientError, TooManyRedirects) as e:
+            logger.warning(f"Failed to fetch {url} after retries: {str(e)}")
+            self.problematic_urls.add(url)
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error fetching {url}: {str(e)}")
+            self.problematic_urls.add(url)
+            return None
 
     def recursive_crawler(self) -> List[str]:
         """Starting from a base url, recursively crawl a domain for urls.
@@ -127,49 +212,38 @@ class CaddyScraper:
         Returns:
             links (List[str]): a list of links found on the pages.
         """
-        bs_transformer = BeautifulSoupTransformer()
-        cookie_dict = None
-        if "advisernet" in self.base_url:
-            cookie_dict = {
-                "Cookie": f".CitizensAdviceLogin={os.getenv(
-                    "ADVISOR_NET_AUTHENTICATION")}"
-            }
-            loader = AsyncHtmlLoader(
-                self.base_url, header_template=cookie_dict)
-        else:
-            loader = AsyncHtmlLoader(self.base_url)
-        docs = loader.load()
-        root_page = docs[0]
-        page_html = BeautifulSoup(root_page.page_content, features="lxml")
-        extracted_links = bs_transformer.extract_tags(str(page_html), ["a"])
-        links_list = extract_urls(self.base_url, extracted_links)
-        if cookie_dict:
-            loader = AsyncHtmlLoader(links_list, header_template=cookie_dict)
-        else:
-            loader = AsyncHtmlLoader(links_list)
         links = [self.base_url]
-        for _ in range(self.scrape_depth):
-            all_pages = loader.load()
-            for page in tqdm(all_pages):
-                current_url = page.metadata["source"]
-                page_html = BeautifulSoup(page.page_content, features="lxml")
-                extracted_links = bs_transformer.extract_tags(
-                    str(page_html), ["a"])
-                current_page_links = extract_urls(current_url, extracted_links)
-                current_page_links = [
-                    link
-                    for link in current_page_links
-                    if check_if_link_in_base_domain(self.base_url, link)
-                ]
-                links += current_page_links
-                links = self.remove_excluded_domains(links)
-                links = remove_anchor_urls(list(set(links)))
-                if cookie_dict:
-                    loader = AsyncHtmlLoader(
-                        links, header_template=cookie_dict)
-                else:
-                    loader = AsyncHtmlLoader(links)
-        return remove_anchor_urls(links)
+        for depth in range(self.scrape_depth):
+            try:
+                logger.info(f"Crawling depth {depth + 1}/{self.scrape_depth}")
+                all_pages = asyncio.run(self.fetch_pages(links))
+                new_links = []
+                for page in all_pages:
+                    current_url = page.metadata["source"]
+                    page_html = BeautifulSoup(
+                        page.page_content, features="lxml")
+                    extracted_links, links = self.extract_links_from_soup(
+                        page_html, current_url, links
+                    )
+
+                    new_links.extend(extracted_links)
+
+                links = list(set(new_links) - self.problematic_urls)
+
+                logger.info(
+                    f"Found {len(links)} unique links at depth {depth + 1}")
+                logger.info(
+                    f"Problematic URLs removed: {
+                        len(self.problematic_urls)}"
+                )
+            except Exception as e:
+                logger.error(
+                    f"Error in recursive crawler at depth {
+                        depth + 1}: {str(e)}"
+                )
+
+        self.log_problematic_urls()
+        return links
 
     def fetch_urls_from_sitemap(self) -> List[str]:
         """Fetch urls from a sitemap.
@@ -198,7 +272,7 @@ class CaddyScraper:
             )
         ]
 
-    def download_urls(self, urls: List[str]) -> List[Dict[str, str]]:
+    async def download_urls(self, urls: List[str]) -> List[Dict[str, str]]:
         """Split urls into batches and scrape their content.
 
         Args:
@@ -208,17 +282,17 @@ class CaddyScraper:
             List[Dict[str, str]]: List of dicts containing scraped data from urls.
         """
         url_batches = [
-            urls[i: i + self.batch_size] for i in range(0, len(urls), self.batch_size)
+            urls[i : i + self.batch_size] for i in range(0, len(urls), self.batch_size)
         ]
         for ind, url_batch in enumerate(url_batches):
             if self.downloading_method == "scrape":
-                results = self.scrape_url_batch(url_batch)
+                results = await self.scrape_url_batch(url_batch)
             elif self.downloading_method == "api":
                 results = self.download_batch_from_govuk_api(url_batch)
             self.save_results(results, ind)
 
     @retry()
-    def scrape_url_batch(self, url_list: List[str]) -> List[Dict[str, str]]:
+    async def scrape_url_batch(self, url_list: List[str]) -> List[Dict[str, str]]:
         """Takes a batch of urls, iteratively scrapes the content of each page.
 
         Args:
@@ -227,42 +301,85 @@ class CaddyScraper:
         Returns:
             List[Dict[str, str]]: List of dicts containing scraped data from urls.
         """
-        if "advisernet" in self.base_url:
-            cookie_dict = {
-                "Cookie": f".CitizensAdviceLogin={os.getenv(
-                    "ADVISOR_NET_AUTHENTICATION")}"
-            }
-            loader = AsyncHtmlLoader(url_list, cookie_dict)
-        else:
-            loader = AsyncHtmlLoader(url_list)
-        docs = loader.load()
+        authentication_cookie = self.get_authentication_cookie()
+        header_template = (
+            {"Cookie": authentication_cookie} if authentication_cookie else None
+        )
+
+        loader = AsyncHtmlLoader(url_list, header_template=header_template)
         scraped_pages = []
-        for page in tqdm(docs):
-            current_url = page.metadata["source"]
-            soup = BeautifulSoup(page.page_content, "html.parser")
-            if soup.find("div", id=self.div_ids):
-                main_section_html = soup.find("div", id=self.div_ids)
-            elif soup.find("div", class_=self.div_classes):
-                main_section_html = soup.find("div", class_=self.div_classes)
-            else:
-                main_section_html = soup
-            if len(main_section_html) > 0:
-                current_page_markdown = html2text.html2text(
-                    str(main_section_html))
-                current_page_markdown = remove_markdown_index_links(
-                    current_page_markdown
-                )
-                page_dict = {
-                    "source_url": current_url,
-                    "markdown": current_page_markdown,
-                    "markdown_length": len(current_page_markdown),
-                }
-                scraped_pages.append(page_dict)
+
+        try:
+            docs = await loader.aload()
+            for page in docs:
+                try:
+                    current_url = page.metadata["source"]
+                    soup = BeautifulSoup(page.page_content, "html.parser")
+                    main_section_html = self.extract_main_content(soup)
+                    if main_section_html and len(main_section_html) > 0:
+                        current_page_markdown = html2text.html2text(
+                            str(main_section_html)
+                        )
+                        current_page_markdown = remove_markdown_index_links(
+                            current_page_markdown
+                        )
+                        page_dict = {
+                            "source": current_url,
+                            "markdown": current_page_markdown,
+                            "markdown_length": len(current_page_markdown),
+                        }
+                        scraped_pages.append(page_dict)
+                    else:
+                        logger.warning(
+                            f"No main content found for {current_url}")
+                        self.problematic_urls.add(current_url)
+                except Exception as e:
+                    logger.error(
+                        f"Error processing page {
+                            current_url}: {str(e)}"
+                    )
+                    self.problematic_urls.add(current_url)
+        except Exception as e:
+            logger.error(f"Error in batch scraping: {str(e)}")
+
         return scraped_pages
+
+    def get_authentication_cookie(self) -> Optional[str]:
+        """Get authentication cookie for domain access.
+
+        Returns:
+            Optional[str]: authentication cookie.
+        """
+        if "advisernet" in self.base_url:
+            return f".CitizensAdviceLogin={os.getenv('ADVISOR_NET_AUTHENTICATION')}"
+        return None
+
+    def extract_main_content(self, soup: BeautifulSoup) -> Optional[BeautifulSoup]:
+        """Extract the main content from the BeautifulSoup object.
+
+        Args:
+            soup (BeautifulSoup): BeautifulSoup object of the page.
+
+        Returns:
+            Optional[BeautifulSoup]: Main content section or None if not found.
+        """
+        for div_id in self.div_ids:
+            main_section = soup.find("div", id=div_id)
+            if main_section:
+                return main_section
+
+        for div_class in self.div_classes:
+            main_section = soup.find("div", class_=div_class)
+            if main_section:
+                return main_section
+
+        return soup
 
     @sleep_and_retry
     @limits(calls=10, period=1)
-    def download_single_url(self, url: str, base_url: str, min_body_length: int) -> Optional[Dict[str, Any]]:
+    def download_single_url(
+        self, url: str, base_url: str, min_body_length: int
+    ) -> Optional[Dict[str, Any]]:
         """
         Download and process content from a single URL using the gov.uk API.
 
@@ -307,7 +424,7 @@ class CaddyScraper:
                 if len(linked_urls) > 0:
                     linked_urls = [u[:-1] for u in set(linked_urls)]
                 return {
-                    "source_url": url,
+                    "source": url,
                     "markdown": json_body,
                     "markdown_length": len(json_body),
                     "linked_urls": linked_urls,
@@ -319,9 +436,12 @@ class CaddyScraper:
 
         except requests.exceptions.RequestException as e:
             logger.error(f"Error processing {url}: {str(e)}")
+            self.problematic_urls.add(url)
             return None
 
-    def download_batch_from_govuk_api(self, url_list: List[str], min_body_length: int = 50) -> List[Dict[str, str]]:
+    def download_batch_from_govuk_api(
+        self, url_list: List[str], min_body_length: int = 50
+    ) -> List[Dict[str, str]]:
         """
         Download and process content from a batch of URLs using the gov.uk API.
 
@@ -330,11 +450,11 @@ class CaddyScraper:
 
         Args:
             url_list (List[str]): A list of URLs to process.
-            min_body_length (int, optional): The minimum required length for the body content. 
+            min_body_length (int, optional): The minimum required length for the body content.
                                             Defaults to 50.
 
         Returns:
-            List[Dict[str, str]]: A list of dictionaries, each containing the processed 
+            List[Dict[str, str]]: A list of dictionaries, each containing the processed
                                 content and metadata for a successfully downloaded URL.
         """
         pages = []
@@ -358,3 +478,35 @@ class CaddyScraper:
             os.mkdir(self.output_dir)
         with open(f"{self.output_dir}/scrape_result_{file_index}.json", "w+") as f:
             json.dump(pages, f)
+
+    def extract_links_from_soup(self, soup, current_url, links):
+        """Extract links from BeautifulSoup object.
+
+        Args:
+            soup (BeautifulSoup): BeautifulSoup object of the page.
+
+        Returns:
+            List[str]: List of extracted links.
+        """
+        extracted_tags = self.bs_transformer.extract_tags(str(soup), ["a"])
+        current_page_links = extract_urls(current_url, extracted_tags)
+        current_page_links = [
+            link
+            for link in current_page_links
+            if check_if_link_in_base_domain(self.base_url, link)
+        ]
+        links += current_page_links
+        links = self.remove_excluded_domains(links)
+        extracted_links = remove_anchor_urls(list(set(links)))
+        return extracted_links, links
+
+    def log_problematic_urls(self):
+        """Log problematic URLs encountered during scraping."""
+        if self.problematic_urls:
+            logger.warning(
+                "The following URLs were problematic and excluded from crawling:"
+            )
+            for url in self.problematic_urls:
+                logger.warning(f"- {url}")
+        else:
+            logger.info("No problematic URLs encountered during crawling.")

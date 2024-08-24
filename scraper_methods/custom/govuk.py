@@ -10,7 +10,7 @@ from core_utils import (
     return_excluded_domains,
     generate_vectorstore,
     delete_duplicate_urls_from_store,
-    logger
+    logger,
 )
 
 
@@ -123,16 +123,14 @@ def scrape_govuk_child_sitemap_df(
     logger.info(f"Number of rows in dataframe: {len(site_df)}")
 
     # split dataframe into batches
-    batches = [site_df[x: x + batch_size]
-               for x in range(0, len(site_df), batch_size)]
+    batches = [site_df[x : x + batch_size] for x in range(0, len(site_df), batch_size)]
 
     for batch in tqdm(batches):
         logger.info("querying API")
         for attempt in range(1, retry_attempts + 1):
             try:
                 urls_to_documents = (
-                    batch["loc"].apply(
-                        get_url_content_from_content_api).tolist()
+                    batch["loc"].apply(get_url_content_from_content_api).tolist()
                 )
                 break  # Exit loop if successful
             except Exception as e:
@@ -187,8 +185,7 @@ def iterative_govuk_scrape(domains_to_exclude=None, retry_attempts=3, **kwargs):
     for sitemap in tqdm(website_url_df_list):
         try:
             df = pd.DataFrame(
-                columns=["loc", "changefreq",
-                         "priority", "domain", "sitemap_name"]
+                columns=["loc", "changefreq", "priority", "domain", "sitemap_name"]
             )
 
             df = pd.concat([df, sitemap], ignore_index=True)
